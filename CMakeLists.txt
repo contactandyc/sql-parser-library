@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Andy Curtis <contactandyc@gmail.com>
+# SPDX-FileCopyrightText: 2024-2026 Andy Curtis <contactandyc@gmail.com>
 # SPDX-FileCopyrightText: 2024–2025 Knode.ai — technical questions: contact Andy (above)
 # SPDX-License-Identifier: Apache-2.0
 
@@ -44,9 +44,11 @@ endif()
 
 include(GNUInstallDirs)
 
-# ---- Dependencies ----
+# ---- Dependencies (Standard CMake) ----
 find_package(a_memory_library CONFIG REQUIRED)
 find_package(the_macro_library CONFIG REQUIRED)
+
+# ---- Dependencies (PkgConfig Shims) ----
 
 # ── Library variants (ALL are defined & built/installed) ──────────────────────
 add_library(sql_parser_library_debug  src/brutezone/timezone.c  src/brutezone/timezone_impl.c  src/specs/arithmetic.c  src/specs/avg.c  src/specs/between.c  src/specs/boolean.c  src/specs/cast_convert.c  src/specs/coalesce.c  src/specs/comparison.c  src/specs/concat.c  src/specs/convert_tz.c  src/specs/date_trunc.c  src/specs/extract.c  src/specs/in.c  src/specs/is_boolean.c  src/specs/is_null.c  src/specs/length.c  src/specs/like.c  src/specs/lower_upper.c  src/specs/min_max.c  src/specs/now.c  src/specs/round.c  src/specs/substr.c  src/specs/sum.c  src/specs/trim.c  src/sql_ast.c  src/sql_ast_to_node.c  src/sql_ctx.c  src/sql_interval.c  src/sql_node.c  src/sql_tokenizer.c  src/utils/date_utils.c  src/utils/named_pointer.c)
@@ -260,7 +262,3 @@ install(FILES
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sql_parser_library
 )
 # Extra project-specific targets
-
-
-enable_testing()
-add_subdirectory(tests)
