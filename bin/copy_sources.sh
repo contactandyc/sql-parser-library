@@ -1,6 +1,8 @@
-# SPDX-FileCopyrightText: 2024-2026 Andy Curtis <contactandyc@gmail.com>
-# SPDX-FileCopyrightText: 2024–2025 Knode.ai — technical questions: contact Andy (above)
+# SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
+# SPDX-FileCopyrightText: 2024–2025 Knode.ai
 # SPDX-License-Identifier: Apache-2.0
+#
+# Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 # bin/cat_source.sh `ls include/*/*.h src/*.c src/*/*.c` | pbcopy
 bin/cat_source.sh `ls include/*/*.h demo/sql_parser.c src/sql_tokenizer.c src/sql_ast.c` > sources.txt
