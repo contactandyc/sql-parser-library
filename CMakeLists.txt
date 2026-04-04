@@ -8,7 +8,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(sql_parser_library
-  VERSION 0.1.2
+  VERSION 0.1.3
   LANGUAGES C
 )
 # ── Variant selection for the umbrella alias ──────────────────────────────────
@@ -93,15 +93,10 @@ target_include_directories(sql_parser_library_debug PUBLIC
 set_target_properties(sql_parser_library_debug PROPERTIES
   C_STANDARD 23
   C_STANDARD_REQUIRED YES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
   POSITION_INDEPENDENT_CODE ON
 )
-
-if("CXX" IN_LIST CMAKE_PROJECT_LANGUAGES)
-  set_target_properties(sql_parser_library_debug PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-  )
-endif()
 
 target_link_libraries(sql_parser_library_debug PUBLIC
   a_memory_library::a_memory_library
@@ -160,15 +155,10 @@ target_include_directories(sql_parser_library_memory PUBLIC
 set_target_properties(sql_parser_library_memory PROPERTIES
   C_STANDARD 23
   C_STANDARD_REQUIRED YES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
   POSITION_INDEPENDENT_CODE ON
 )
-
-if("CXX" IN_LIST CMAKE_PROJECT_LANGUAGES)
-  set_target_properties(sql_parser_library_memory PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-  )
-endif()
 
 target_link_libraries(sql_parser_library_memory PUBLIC
   a_memory_library::a_memory_library
@@ -230,15 +220,10 @@ target_include_directories(sql_parser_library_static PUBLIC
 set_target_properties(sql_parser_library_static PROPERTIES
   C_STANDARD 23
   C_STANDARD_REQUIRED YES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
   POSITION_INDEPENDENT_CODE ON
 )
-
-if("CXX" IN_LIST CMAKE_PROJECT_LANGUAGES)
-  set_target_properties(sql_parser_library_static PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-  )
-endif()
 
 target_link_libraries(sql_parser_library_static PUBLIC
   a_memory_library::a_memory_library
@@ -297,15 +282,10 @@ target_include_directories(sql_parser_library_shared PUBLIC
 set_target_properties(sql_parser_library_shared PROPERTIES
   C_STANDARD 23
   C_STANDARD_REQUIRED YES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED YES
   POSITION_INDEPENDENT_CODE ON
 )
-
-if("CXX" IN_LIST CMAKE_PROJECT_LANGUAGES)
-  set_target_properties(sql_parser_library_shared PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES
-  )
-endif()
 
 target_link_libraries(sql_parser_library_shared PUBLIC
   a_memory_library::a_memory_library
@@ -341,6 +321,7 @@ set(_CFG_IN "${CMAKE_CURRENT_BINARY_DIR}/config.cmake.in")
 file(WRITE "${_CFG_IN}" [=[
 @PACKAGE_INIT@
 include(CMakeFindDependencyMacro)
+
 
 if(NOT DEFINED A_BUILD_VARIANT OR A_BUILD_VARIANT STREQUAL "")
   set(A_BUILD_VARIANT "debug")
