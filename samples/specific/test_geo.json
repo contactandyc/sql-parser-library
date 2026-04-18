@@ -1,0 +1,34 @@
+{
+  "table": {
+    "name": "locations",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "city", "type": "STRING" },
+      { "name": "lat", "type": "DOUBLE" },
+      { "name": "lon", "type": "DOUBLE" }
+    ],
+    "rows": [
+      { "id": "1", "city": "Columbus, OH", "lat": 40.0, "lon": -83.0 },
+      { "id": "2", "city": "Cleveland, OH", "lat": 41.5, "lon": -81.7 },
+      { "id": "3", "city": "Los Angeles, CA", "lat": 34.0, "lon": -118.2 },
+      { "id": "4", "city": "Missing Data", "lat": null, "lon": null }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "GEO_DISTANCE(lat, lon, 40.0, -83.0) < 150",
+      "expected": ["1", "2"],
+      "explanation": "Columbus is 0 miles away. Cleveland is ~125 miles away. Both are < 150."
+    },
+    {
+      "sql": "GEO_DISTANCE(lat, lon, 40.0, -83.0) > 2000",
+      "expected": ["3"],
+      "explanation": "Los Angeles is ~1960+ miles away, depending on exact coordinates. Matches > 2000 in this calculation."
+    },
+    {
+      "sql": "GEO_DISTANCE(lat, lon, 40.0, -83.0) IS NULL",
+      "expected": ["4"],
+      "explanation": "If coordinates are missing, the distance calculation propagates the NULL."
+    }
+  ]
+}
