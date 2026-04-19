@@ -233,9 +233,6 @@ sql_node_t *sql_datetime_interval_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     struct tm tm_info;
     gmtime_r(&datetime_node->value.epoch, &tm_info);
 
-    sql_ctx_warning( ctx, "Interval %d %d %d %d %d %d %d\n", interval->years, interval->months, interval->days, interval->hours, interval->minutes, interval->seconds, interval->microseconds);
-    sql_ctx_warning( ctx, "Time %d %d %d %d %d %d\n", tm_info.tm_year, tm_info.tm_mon, tm_info.tm_mday, tm_info.tm_hour, tm_info.tm_min, tm_info.tm_sec);
-
     tm_info.tm_year -= interval->years;
     tm_info.tm_mon -= interval->months;
     tm_info.tm_mday -= interval->days;
@@ -259,21 +256,34 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
     update->expected_data_types = (sql_data_type_t *)aml_pool_alloc(ctx->pool, f->num_parameters * sizeof(sql_data_type_t));
 
     sql_data_type_t data_type = f->parameters[0]->data_type;
-    for (size_t i = 0; i < f->num_parameters; i++) {
-        if (f->parameters[i]->data_type != data_type) {
-            if ((data_type == SQL_TYPE_INT && f->parameters[i]->data_type == SQL_TYPE_DOUBLE) ||
-                (data_type == SQL_TYPE_DOUBLE && f->parameters[i]->data_type == SQL_TYPE_INT)) {
-                data_type = SQL_TYPE_DOUBLE; // Promote to double if there's a mix of int and double
+
+    if (data_type == SQL_TYPE_DATETIME) {
+        update->expected_data_types[0] = SQL_TYPE_DATETIME;
+        if (f->num_parameters > 1) {
+            update->expected_data_types[1] = f->parameters[1]->data_type;
+            if(f->parameters[1]->token_type == SQL_COMPOUND_LITERAL && f->parameters[1]->data_type == SQL_TYPE_STRING) {
+                update->expected_data_types[1] = SQL_TYPE_STRING;
             }
         }
-        update->expected_data_types[i] = data_type;
-    }
-    if(data_type == SQL_TYPE_DATETIME && f->parameters[1]->data_type == SQL_TYPE_STRING && f->parameters[1]->token_type == SQL_COMPOUND_LITERAL) {
-        update->expected_data_types[1] = SQL_TYPE_STRING; // Special case: interval string
+    } else {
+        for (size_t i = 0; i < f->num_parameters; i++) {
+            if (f->parameters[i]->data_type != data_type) {
+                if ((data_type == SQL_TYPE_INT && f->parameters[i]->data_type == SQL_TYPE_DOUBLE) ||
+                    (data_type == SQL_TYPE_DOUBLE && f->parameters[i]->data_type == SQL_TYPE_INT)) {
+                    data_type = SQL_TYPE_DOUBLE; // Promote to double if there's a mix of int and double
+                }
+            }
+            update->expected_data_types[i] = data_type;
+        }
     }
 
     update->return_type = data_type;
     const char *name = spec->name;
+
+    // special case for datetime - datetime
+    if (data_type == SQL_TYPE_DATETIME && f->num_parameters > 1 && f->parameters[1]->data_type == SQL_TYPE_DATETIME && strcmp(name, "-") == 0) {
+        update->return_type = SQL_TYPE_DOUBLE;
+    }
 
     // Determine the correct implementation based on the operator and type
     if (data_type == SQL_TYPE_INT) {
@@ -302,7 +312,6 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
             update->implementation = sql_datetime_double_subtract;
         else if (strcmp(name, "-") == 0 && f->parameters[1]->data_type == SQL_TYPE_DATETIME) {
             update->implementation = sql_datetime_subtract;
-            update->return_type = SQL_TYPE_DOUBLE; // Special case: subtracting two datetimes gives a double
         } else if (strcmp(name, "+") == 0 && f->parameters[1]->data_type == SQL_TYPE_STRING)
             update->implementation = sql_datetime_interval_add;
         else if (strcmp(name, "-") == 0 && f->parameters[1]->data_type == SQL_TYPE_STRING)

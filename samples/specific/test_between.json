@@ -42,20 +42,20 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes BETWEEN 100 AND 700",
+            "sql": "num_bytes BETWEEN 100 AND 700",
             "expected": [
                 "1",
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes NOT BETWEEN 100 AND 700",
+            "sql": "num_bytes NOT BETWEEN 100 AND 700",
             "expected": [
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE created_time BETWEEN 1692654000 AND 1692655000",
+            "sql": "created_time BETWEEN 1692654000 AND 1692655000",
             "expected": [
                 "1",
                 "2"

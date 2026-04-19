@@ -23,6 +23,5 @@ typedef struct sql_ast_node_s {
 
 sql_ast_node_t *build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token_count);
 void print_ast(sql_ast_node_t *node, int depth);
-sql_ast_node_t *find_clause(sql_ast_node_t *root, const char *clause_name);
 
 #endif /* _sql_ast_H */

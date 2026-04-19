@@ -24,7 +24,8 @@ static sql_node_t *sql_func_geo_distance(sql_ctx_t *ctx, sql_node_t *f) {
     // If any coordinate is NULL, the distance is NULL
     if (!lat1_node || lat1_node->is_null || !lon1_node || lon1_node->is_null ||
         !lat2_node || lat2_node->is_null || !lon2_node || lon2_node->is_null) {
-        return sql_double_init(ctx, 0.0, true);
+        return sql_string_init(ctx, NULL, true);
+        // return sql_double_init(ctx, 0.0, true);
     }
 
     // Convert degrees to radians
@@ -43,6 +44,7 @@ static sql_node_t *sql_func_geo_distance(sql_ctx_t *ctx, sql_node_t *f) {
 
     double c = 2.0 * atan2(sqrt(a), sqrt(1.0 - a));
     double distance = EARTH_RADIUS_MILES * c;
+    // printf( "%0.3lf %0.3lf %0.3lf %0.3lf => %0.3f\n", lat1, lon1, lat2, lon2, distance );
 
     return sql_double_init(ctx, distance, false);
 }

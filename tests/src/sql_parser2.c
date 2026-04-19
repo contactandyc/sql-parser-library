@@ -313,8 +313,8 @@ sql_value_t *evaluate_ast(aml_pool_t *pool, sql_ast_node_t *node, row_t *row, si
     }
 }
 
-// Filter rows based on the WHERE clause
-void apply_where_clause(aml_pool_t *pool, sql_ast_node_t *where_clause) {
+// Filter rows based on the expression
+void apply_expression(aml_pool_t *pool, sql_ast_node_t *expr_node) {
     for (size_t i = 0; i < row_count; i++) {
         printf("Debug: Evaluating row %zu:\n", i);
         for (size_t j = 0; j < 4; j++) { // Assuming each row has 4 columns
@@ -334,18 +334,18 @@ void apply_where_clause(aml_pool_t *pool, sql_ast_node_t *where_clause) {
             }
         }
 
-        sql_value_t *match = evaluate_ast(pool, where_clause, rows[i], 4);
+        sql_value_t *match = evaluate_ast(pool, expr_node, rows[i], 4);
         if (match && match->type == SQL_TYPE_BOOL && match->data.bool_value) {
-            printf("Row %zu matches the WHERE clause\n", i);
+            printf("Row %zu matches the expression\n", i);
         } else {
-            printf("Row %zu does not match the WHERE clause\n", i);
+            printf("Row %zu does not match the expression\n", i);
         }
     }
 }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        printf( "Usage: %s \"SQL query\"\n", argv[0]);
+        printf( "Usage: %s \"Expression\"\n", argv[0]);
         return 1;
     }
 
@@ -369,19 +369,18 @@ int main(int argc, char **argv) {
     printf("\n\n>> AST Tree:\n\n");
     print_ast(ast, 0);
 
-    sql_ast_node_t *where_clause = find_clause(ast, "WHERE");
-    if (where_clause) {
-        sql_func_node_t *func_node = convert_ast_to_func_node(pool, where_clause->left);
+    if (ast) {
+        sql_func_node_t *func_node = convert_ast_to_func_node(pool, ast);
         apply_type_conversions(pool, func_node);
-        printf("\n\n>> WHERE clause as function tree:\n\n");
+        printf("\n\n>> Expression as function tree:\n\n");
         print_func_node(func_node, 0);
     }
 
-    printf("\n\n>> Applying WHERE clause:\n\n");
-    if (where_clause) {  // Assuming WHERE clause is the next node
-        apply_where_clause(pool, where_clause->left);
+    printf("\n\n>> Applying Expression:\n\n");
+    if (ast) {
+        apply_expression(pool, ast);
     } else {
-        printf("No WHERE clause found.\n");
+        printf("No expression found.\n");
     }
 
     aml_pool_destroy(pool);

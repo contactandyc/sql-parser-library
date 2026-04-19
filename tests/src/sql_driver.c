@@ -176,7 +176,7 @@ static my_table_t *parse_table_object(ajson_t *table_obj)
 
 
 //--------------------------------------------------------------
-// Evaluate a single query, gather matching "id" column, compare
+// Evaluate a single expression, gather matching "id" column, compare
 //--------------------------------------------------------------
 static void debug_one_query(my_table_t *table, const char *sql,
                             char **expected_ids, size_t num_expected)
@@ -202,24 +202,20 @@ static void debug_one_query(my_table_t *table, const char *sql,
         return;
     }
 
-    // find WHERE
-    sql_ast_node_t *where_clause = find_clause(ast, "WHERE");
-    sql_node_t *where_node = NULL;
-    if (where_clause && where_clause->left) {
-        print_ast(where_clause->left, 0);
-        where_node = convert_ast_to_node(ctx, where_clause->left);
-        print_node(ctx, where_node, 0);
-        apply_type_conversions(ctx, where_node);
-        print_node(ctx, where_node, 0);
-        simplify_func_tree(ctx, where_node);
-        print_node(ctx, where_node, 0);
-        simplify_logical_expressions(where_node);
-        print_node(ctx, where_node, 0);
+    sql_node_t *expr_node = NULL;
+    if (ast) {
+        print_ast(ast, 0);
+        expr_node = convert_ast_to_node(ctx, ast);
+        print_node(ctx, expr_node, 0);
+        apply_type_conversions(ctx, expr_node);
+        print_node(ctx, expr_node, 0);
+        simplify_func_tree(ctx, expr_node);
+        print_node(ctx, expr_node, 0);
+        simplify_logical_expressions(expr_node);
+        print_node(ctx, expr_node, 0);
     }
 
     // We'll find the "id" column name if we want to compare row IDs
-    // (But we no longer rely on an integer index. We'll just do a dynamic JSON lookup if needed)
-    // For demonstration, let's do the old approach: see if we can find "id" in table->columns:
     int id_col_index = -1;
     for (size_t i = 0; i < table->num_columns; i++) {
         if (strcasecmp(table->columns[i].name, "id") == 0) {
@@ -241,8 +237,8 @@ static void debug_one_query(my_table_t *table, const char *sql,
         ctx->row = row_obj;
 
         bool matched = true;
-        if (where_node) {
-            sql_node_t *result = sql_eval(ctx, where_node);
+        if (expr_node) {
+            sql_node_t *result = sql_eval(ctx, expr_node);
             print_node(ctx, result, 0);
             if (!result || result->data_type != SQL_TYPE_BOOL || !result->value.bool_value) {
                 matched = false;
@@ -309,7 +305,7 @@ static void debug_one_query(my_table_t *table, const char *sql,
 
 
 //--------------------------------------------------------------
-// Evaluate a single query, gather matching "id" column, compare
+// Evaluate a single expression, gather matching "id" column, compare
 //--------------------------------------------------------------
 static void run_one_query(my_table_t *table, const char *sql,
                           char **expected_ids, size_t num_expected, bool detailed)
@@ -336,19 +332,15 @@ static void run_one_query(my_table_t *table, const char *sql,
         return;
     }
 
-    // find WHERE
-    sql_ast_node_t *where_clause = find_clause(ast, "WHERE");
-    sql_node_t *where_node = NULL;
-    if (where_clause && where_clause->left) {
-        where_node = convert_ast_to_node(ctx, where_clause->left);
-        apply_type_conversions(ctx, where_node);
-        simplify_func_tree(ctx, where_node);
-        simplify_logical_expressions(where_node);
+    sql_node_t *expr_node = NULL;
+    if (ast) {
+        expr_node = convert_ast_to_node(ctx, ast);
+        apply_type_conversions(ctx, expr_node);
+        simplify_func_tree(ctx, expr_node);
+        simplify_logical_expressions(expr_node);
     }
 
     // We'll find the "id" column name if we want to compare row IDs
-    // (But we no longer rely on an integer index. We'll just do a dynamic JSON lookup if needed)
-    // For demonstration, let's do the old approach: see if we can find "id" in table->columns:
     int id_col_index = -1;
     for (size_t i = 0; i < table->num_columns; i++) {
         if (strcasecmp(table->columns[i].name, "id") == 0) {
@@ -370,8 +362,8 @@ static void run_one_query(my_table_t *table, const char *sql,
         ctx->row = row_obj;
 
         bool matched = true;
-        if (where_node) {
-            sql_node_t *result = sql_eval(ctx, where_node);
+        if (expr_node) {
+            sql_node_t *result = sql_eval(ctx, expr_node);
             if (!result || result->data_type != SQL_TYPE_BOOL || !result->value.bool_value) {
                 matched = false;
             }

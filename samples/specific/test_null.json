@@ -35,20 +35,20 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE status IS NULL",
+            "sql": "status IS NULL",
             "expected": [
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE status IS NOT NULL",
+            "sql": "status IS NOT NULL",
             "expected": [
                 "1",
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE remarks IS NULL",
+            "sql": "remarks IS NULL",
             "expected": [
                 "1"
             ]

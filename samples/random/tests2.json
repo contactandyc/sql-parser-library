@@ -36,27 +36,27 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes > 500 AND integration_type = 'FILE_STORAGE'",
+      "sql": "num_bytes > 500 AND integration_type = 'FILE_STORAGE'",
       "expected": ["abc123"],
       "explanation": "Tests basic AND. Only abc123 has num_bytes>500 and is FILE_STORAGE."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type = 'GMAIL' OR num_bytes < 300)",
+      "sql": "NOT (integration_type = 'GMAIL' OR num_bytes < 300)",
       "expected": ["abc123","xxx111"],
       "explanation": "Tests NOT combined with OR. Excludes GMAIL or docs under 300 bytes."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes < 300 AND integration_type = 'FILE_STORAGE'",
+      "sql": "num_bytes < 300 AND integration_type = 'FILE_STORAGE'",
       "expected": ["zzz789"],
       "explanation": "Tests an AND for smaller numeric condition + FILE_STORAGE integration."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT integration_type = 'FILE_STORAGE'",
+      "sql": "NOT integration_type = 'FILE_STORAGE'",
       "expected": ["def999","xxx111"],
       "explanation": "Tests unary NOT. We want everything that is NOT FILE_STORAGE."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = 'FILE_STORAGE' OR num_bytes < 100",
+      "sql": "integration_type = 'FILE_STORAGE' OR num_bytes < 100",
       "expected": ["abc123","def999", "zzz789"],
       "explanation": "Tests basic OR usage: either FILE_STORAGE or num_bytes < 100."
     }

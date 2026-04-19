@@ -234,9 +234,7 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
             cleaned_number++;
             cleaned_length--;
         }
-        sql_token_t *t = _sql_token_init(bh, pool, start, length, SQL_NUMBER, cleaned_number);
-        // printf( "\nToken1: ");
-        // sql_token_print(&t, 1);
+        _sql_token_init(bh, pool, start, length, SQL_NUMBER, cleaned_number);
     } else {
         char *alt_token = aml_pool_alloc(pool, length + 1);
         memcpy(alt_token, start, length);
@@ -244,9 +242,7 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
         if (alt_token[0] == '+') {
             alt_token++;
         }
-        sql_token_t *t = _sql_token_init(bh, pool, start, length, SQL_NUMBER, alt_token);
-        // printf( "\nToken2(%s): ", alt_token);
-        // sql_token_print(&t, 1);
+        _sql_token_init(bh, pool, start, length, SQL_NUMBER, alt_token);
     }
 
     // Update position
@@ -333,19 +329,17 @@ void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
 }
 
 void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s, sql_token_t *last_token) {
-    // Determine if '-' or '+' is part of a signed number
+    // CRITICAL FIX: Treat a minus sign following a comma as a negative number
     if ((**s == '-' || **s == '+') &&
         (isdigit((*s)[1]) || ((*s)[1] == '.' && isdigit((*s)[2]))) &&
         (!last_token || last_token->type == SQL_OPERATOR ||
-         last_token->type == SQL_OPEN_PAREN || last_token->type == SQL_COMPARISON)) {
-        // Treat as part of a signed number
+         last_token->type == SQL_OPEN_PAREN || last_token->type == SQL_COMPARISON ||
+         last_token->type == SQL_COMMA)) {
         handle_number(bh, pool, s);
     } else {
-        // Treat as a binary operator
         handle_operator(bh, pool, s);
     }
 }
-
 
 // Main tokenizer function
 sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_count) {

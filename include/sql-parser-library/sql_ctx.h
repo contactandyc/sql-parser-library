@@ -131,6 +131,8 @@ void sql_register_substr(sql_ctx_t *ctx);
 void sql_register_sum(sql_ctx_t *ctx);
 void sql_register_trim(sql_ctx_t *ctx);
 
+void sql_register_geo(sql_ctx_t *ctx);
+
 bool is_valid_extract(const char *value);
 
 
@@ -160,6 +162,7 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_substr(ctx);
     sql_register_sum(ctx);
     sql_register_trim(ctx);
+    sql_register_geo(ctx);
 }
 
 sql_node_t *sql_eval(sql_ctx_t *ctx, sql_node_t *f);

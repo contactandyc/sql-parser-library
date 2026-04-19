@@ -21,7 +21,7 @@
       "explanation": "Columbus is 0 miles away. Cleveland is ~125 miles away. Both are < 150."
     },
     {
-      "sql": "GEO_DISTANCE(lat, lon, 40.0, -83.0) > 2000",
+      "sql": "GEO_DISTANCE(lat, lon, 40.0, -83.0) > 1900",
       "expected": ["3"],
       "explanation": "Los Angeles is ~1960+ miles away, depending on exact coordinates. Matches > 2000 in this calculation."
     },

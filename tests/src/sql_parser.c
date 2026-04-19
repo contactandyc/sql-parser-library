@@ -38,7 +38,7 @@ sql_ctx_spec_t *create_function_specs(size_t *num_specs, aml_pool_t *pool) {
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        printf("Usage: %s \"SQL query\"\n", argv[0]);
+        printf("Usage: %s \"Expression\"\n", argv[0]);
         return 1;
     }
 
@@ -69,20 +69,19 @@ int main(int argc, char **argv) {
     sql_ast_node_t *ast = build_ast(&context, tokens, token_count);
     printf("\n\n>> AST Tree:\n\n");
 
-    sql_ast_node_t *where_clause = find_clause(ast, "WHERE");
-    if (where_clause) {
-        print_ast(where_clause->left, 0);
-        sql_node_t *func_node = convert_ast_to_node(&context, where_clause->left);
-        printf("\n\n>> WHERE clause as function tree before type conversions:\n\n");
+    if (ast) {
+        print_ast(ast, 0);
+        sql_node_t *func_node = convert_ast_to_node(&context, ast);
+        printf("\n\n>> Expression as function tree before type conversions:\n\n");
         print_node(&context, func_node, 0);
         apply_type_conversions(&context, func_node);
-        printf("\n\n>> WHERE clause as function tree before simplification:\n\n");
+        printf("\n\n>> Expression as function tree before simplification:\n\n");
         print_node(&context, func_node, 0);
         simplify_func_tree(&context, func_node);
-        printf("\n\n>> WHERE clause as function tree after simplification:\n\n");
+        printf("\n\n>> Expression as function tree after simplification:\n\n");
         print_node(&context, func_node, 0);
         simplify_logical_expressions(func_node);
-        printf("\n\n>> WHERE clause as function tree after logical simplification:\n\n");
+        printf("\n\n>> Expression as function tree after logical simplification:\n\n");
         print_node(&context, func_node, 0);
     }
 

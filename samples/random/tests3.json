@@ -36,143 +36,143 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes > 500",
+      "sql": "num_bytes > 500",
       "expected": ["abc123","xxx111"],
       "explanation": "Tests large num_bytes. 1024 (abc123) and 700 (xxx111) both exceed 500."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = 'CHAT_TOOL'",
+      "sql": "integration_type = 'CHAT_TOOL'",
       "expected": ["abc123","zzz789"],
       "explanation": "Both abc123 and zzz789 have integration_type = CHAT_TOOL."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes < 100",
+      "sql": "num_bytes < 100",
       "expected": ["def999"],
       "explanation": "Only def999 is under 100 bytes."
     },
 
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (num_bytes > 1000 AND integration_type = 'CHAT_TOOL')",
+      "sql": "NOT (num_bytes > 1000 AND integration_type = 'CHAT_TOOL')",
       "expected": ["def999","xxx111","zzz789"],
       "explanation": "Excludes abc123 (which is CHAT_TOOL & 1024). Everyone else remains."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (num_bytes > 1000 OR num_bytes < 100) AND NOT(integration_type = 'ZOOM')",
+      "sql": "(num_bytes > 1000 OR num_bytes < 100) AND NOT(integration_type = 'ZOOM')",
       "expected": ["abc123","def999"],
       "explanation": "Large (>1000) or tiny (<100) => abc123,def999. Exclude Zoom => excludes xxx111."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type = 'ZOOM' OR integration_type = 'CHAT_TOOL') AND num_bytes >= 700",
+      "sql": "(integration_type = 'ZOOM' OR integration_type = 'CHAT_TOOL') AND num_bytes >= 700",
       "expected": ["abc123","xxx111"],
       "explanation": "CHAT_TOOL or Zoom + num_bytes>=700 => abc123(1024) CHAT_TOOL, xxx111(700) Zoom."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='CHAT_TOOL' AND num_bytes=200) OR (integration_type='GMAIL' AND num_bytes<60)",
+      "sql": "(integration_type='CHAT_TOOL' AND num_bytes=200) OR (integration_type='GMAIL' AND num_bytes<60)",
       "expected": ["def999", "zzz789"],
       "explanation": "CHAT_TOOL & 200 => zzz789; GMAIL & <60 => def999 => both match."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type='CHAT_TOOL') OR num_bytes>1000",
+      "sql": "NOT (integration_type='CHAT_TOOL') OR num_bytes>1000",
       "expected": ["abc123","def999","xxx111"],
       "explanation": "NOT CHAT_TOOL => def999,xxx111. abc123 => CHAT_TOOL but num_bytes>1000 => included. zzz789 => CHAT_TOOL & 200 => excluded."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='CHAT_TOOL' AND NOT(num_bytes>1000)) OR integration_type='ZOOM'",
+      "sql": "(integration_type='CHAT_TOOL' AND NOT(num_bytes>1000)) OR integration_type='ZOOM'",
       "expected": ["xxx111","zzz789"],
       "explanation": "CHAT_TOOL & <=1000 => zzz789, or Zoom => xxx111."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type='CHAT_TOOL' AND (num_bytes>1000 OR num_bytes<300)",
+      "sql": "integration_type='CHAT_TOOL' AND (num_bytes>1000 OR num_bytes<300)",
       "expected": ["abc123","zzz789"],
       "explanation": "CHAT_TOOL => either >1000(abc123) or <300(zzz789)."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (num_bytes>600 OR NOT integration_type='CHAT_TOOL')",
+      "sql": "(num_bytes>600 OR NOT integration_type='CHAT_TOOL')",
       "expected": ["abc123","def999","xxx111"],
       "explanation": "num_bytes>600 => abc123,xxx111, or not CHAT_TOOL => def999,xxx111 => union => def999,abc123,xxx111."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT integration_type='GMAIL' AND NOT integration_type='ZOOM'",
+      "sql": "NOT integration_type='GMAIL' AND NOT integration_type='ZOOM'",
       "expected": ["abc123","zzz789"],
       "explanation": "Exclude GMAIL(def999) and ZOOM(xxx111). Leaves CHAT_TOOL docs => abc123,zzz789."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type='CHAT_TOOL' OR integration_type='GMAIL')",
+      "sql": "NOT (integration_type='CHAT_TOOL' OR integration_type='GMAIL')",
       "expected": ["xxx111"],
       "explanation": "Exclude CHAT_TOOL and GMAIL => only Zoom => xxx111."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type='CHAT_TOOL') AND num_bytes>100",
+      "sql": "NOT (integration_type='CHAT_TOOL') AND num_bytes>100",
       "expected": ["xxx111"],
       "explanation": "Exclude CHAT_TOOL => def999,xxx111 => def999 => 50 => not>100 => fail => only xxx111 => pass."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (num_bytes<300) AND NOT(integration_type='GMAIL')",
+      "sql": "(num_bytes<300) AND NOT(integration_type='GMAIL')",
       "expected": ["zzz789"],
       "explanation": "num_bytes<300 => def999(50) + zzz789(200). Exclude GMAIL => def999 => so left => zzz789."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time < 1692655000 AND NOT(num_bytes<100)",
+      "sql": "created_time < 1692655000 AND NOT(num_bytes<100)",
       "expected": ["abc123","zzz789"],
       "explanation": "abc123 => time=1692654952 <5000, num_bytes=1024 => not<100 => pass. zzz789 => time=1692654000 <5000 => 200 => not<100 => pass. def999 => time=1692655000 => not strictly less => fail. xxx111 => 6000 => fail."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='ZOOM' AND num_bytes>1000) OR (integration_type='CHAT_TOOL' AND num_bytes>1000)",
+      "sql": "(integration_type='ZOOM' AND num_bytes>1000) OR (integration_type='CHAT_TOOL' AND num_bytes>1000)",
       "expected": ["abc123"],
       "explanation": "Zoom &>1000 => none => 700 => no. CHAT_TOOL &>1000 => abc123 => pass."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='ZOOM' AND num_bytes>500) OR NOT(integration_type='CHAT_TOOL')",
+      "sql": "(integration_type='ZOOM' AND num_bytes>500) OR NOT(integration_type='CHAT_TOOL')",
       "expected": ["def999","xxx111"],
       "explanation": "Zoom &>500 => xxx111 => pass. Or not CHAT_TOOL => def999,xxx111 => union => def999,xxx111. abc123 is CHAT_TOOL => excluded. zzz789 => CHAT_TOOL => excluded."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type='CHAT_TOOL' OR integration_type='ZOOM'",
+      "sql": "integration_type='CHAT_TOOL' OR integration_type='ZOOM'",
       "expected": ["abc123","xxx111","zzz789"],
       "explanation": "All CHAT_TOOL or Zoom => abc123,zzz789,xxx111. def999 => GMAIL => excluded."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type='CHAT_TOOL') AND NOT (integration_type='GMAIL')",
+      "sql": "NOT (integration_type='CHAT_TOOL') AND NOT (integration_type='GMAIL')",
       "expected": ["xxx111"],
       "explanation": "Exclude CHAT_TOOL + exclude GMAIL => only Zoom => xxx111."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (num_bytes>600) AND integration_type='CHAT_TOOL'",
+      "sql": "NOT (num_bytes>600) AND integration_type='CHAT_TOOL'",
       "expected": ["zzz789"],
       "explanation": "num_bytes<=600 => zzz789(200). Also CHAT_TOOL => pass => zzz789. abc123 => 1024 => fail."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time>1692654000 AND created_time<1692655000",
+      "sql": "created_time>1692654000 AND created_time<1692655000",
       "expected": ["abc123"],
       "explanation": "Check strict range: 1692654000 < time < 1692655000 => abc123(4952)"
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time>=1692654000 AND created_time<=1692655000",
+      "sql": "created_time>=1692654000 AND created_time<=1692655000",
       "expected": ["abc123","def999","zzz789"],
       "explanation": "Now inclusive range: zzz789=4000 => pass, abc123=4952 => pass, def999=5000 => pass, xxx111=6000 => fail."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time>1692654952 OR created_time<1692655000",
+      "sql": "created_time>1692654952 OR created_time<1692655000",
       "expected": ["abc123","def999","xxx111","zzz789"],
       "explanation": "Basically everything. e.g. abc123 => time=4952 => not strictly > => fails that, but or <5000 => yes => pass. def999 => 5000 => not strictly < => but or >4952 => pass => etc. If you interpret strictly it might cause differences. This test is tricky but demonstrates complexities."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type='CHAT_TOOL' AND (num_bytes>300 AND num_bytes<900)",
+      "sql": "integration_type='CHAT_TOOL' AND (num_bytes>300 AND num_bytes<900)",
       "expected": [],
       "explanation": "Between 300 and 900 => none of the CHAT_TOOL docs have that range. abc123=1024 => fail, zzz789=200 => fail => empty result."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type='CHAT_TOOL' OR integration_type='CHAT_TOOL'",
+      "sql": "integration_type='CHAT_TOOL' OR integration_type='CHAT_TOOL'",
       "expected": ["abc123","zzz789"],
       "explanation": "Redundant OR same condition => just CHAT_TOOL => abc123,zzz789."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='CHAT_TOOL' OR integration_type='GMAIL') AND NOT (num_bytes>1000)",
+      "sql": "(integration_type='CHAT_TOOL' OR integration_type='GMAIL') AND NOT (num_bytes>1000)",
       "expected": ["def999","zzz789"],
       "explanation": "CHAT_TOOL or Gmail => abc123,zzz789,def999 => then exclude num_bytes>1000 => remove abc123 => left def999,zzz789."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type='CHAT_TOOL' OR NOT integration_type='CHAT_TOOL')",
+      "sql": "(integration_type='CHAT_TOOL' OR NOT integration_type='CHAT_TOOL')",
       "expected": ["abc123","def999","xxx111","zzz789"],
       "explanation": "Either CHAT_TOOL or not CHAT_TOOL => everything!"
     }

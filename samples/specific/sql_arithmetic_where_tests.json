@@ -56,49 +56,49 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM test_table WHERE num_int + 5 = 15",
+            "sql": "num_int + 5 = 15",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE num_double - 0.5 = 10",
+            "sql": "num_double - 0.5 = 10",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE num_int * 2 = 40",
+            "sql": "num_int * 2 = 40",
             "expected": [
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE num_int / 10 = 3",
+            "sql": "num_int / 10 = 3",
             "expected": [
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE str_val + ' World' = 'Hello World'",
+            "sql": "str_val + ' World' = 'Hello World'",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE datetime_val + 1 = 1700086400",
+            "sql": "datetime_val + 1 = 1700086400",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE datetime_val - 1 = 1699913600",
+            "sql": "datetime_val - 1 = 1699913600",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE datetime_val - datetime_val = 0",
+            "sql": "datetime_val - datetime_val = 0",
             "expected": [
                 "1",
                 "2",
@@ -106,13 +106,13 @@
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE datetime_val + INTERVAL '1 day' = 1700086400",
+            "sql": "datetime_val + INTERVAL '1 day' = 1700086400",
             "expected": [
                 "1"
             ]
         },
         {
-            "sql": "SELECT * FROM test_table WHERE datetime_val - INTERVAL '1 day' = 1699913600",
+            "sql": "datetime_val - INTERVAL '1 day' = 1699913600",
             "expected": [
                 "1"
             ]

@@ -44,35 +44,35 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM string_table WHERE name BETWEEN 'Alice' AND 'Charlie'",
+            "sql": "name BETWEEN 'Alice' AND 'Charlie'",
             "expected": ["1", "2", "3", "6", "7"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name NOT BETWEEN 'Alice' AND 'Charlie'",
+            "sql": "name NOT BETWEEN 'Alice' AND 'Charlie'",
             "expected": ["4","5"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name BETWEEN 'A' AND 'B'",
+            "sql": "name BETWEEN 'A' AND 'B'",
             "expected": ["1", "4", "6"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name NOT BETWEEN 'A' AND 'B'",
+            "sql": "name NOT BETWEEN 'A' AND 'B'",
             "expected": ["2","3","5","7"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name BETWEEN 'alpha' AND 'beta'",
+            "sql": "name BETWEEN 'alpha' AND 'beta'",
             "expected": ["6", "7"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name NOT BETWEEN 'alpha' AND 'beta'",
+            "sql": "name NOT BETWEEN 'alpha' AND 'beta'",
             "expected": ["1", "2", "3", "4", "5"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name BETWEEN 'alice' AND 'charlie'",
+            "sql": "name BETWEEN 'alice' AND 'charlie'",
             "expected": ["1", "2", "3", "6", "7"]
         },
         {
-            "sql": "SELECT * FROM string_table WHERE name NOT BETWEEN 'alice' AND 'charlie'",
+            "sql": "name NOT BETWEEN 'alice' AND 'charlie'",
             "expected": ["4","5"]
         }
     ]
