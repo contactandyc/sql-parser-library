@@ -24,15 +24,15 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes > 500",
+      "sql": "num_bytes > 500",
       "expected": ["abc123"]
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = 'CHAT_TOOL'",
+      "sql": "integration_type = 'CHAT_TOOL'",
       "expected": ["abc123"]
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes < 100",
+      "sql": "num_bytes < 100",
       "expected": ["def999"]
     }
   ]

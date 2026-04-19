@@ -8,7 +8,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(sql_parser_library
-  VERSION 0.1.5
+  VERSION 0.1.6
   LANGUAGES C
 )
 # ── Variant selection for the umbrella alias ──────────────────────────────────
@@ -63,6 +63,7 @@ add_library(sql_parser_library_debug STATIC
   src/specs/convert_tz.c
   src/specs/date_trunc.c
   src/specs/extract.c
+  src/specs/geo.c
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
@@ -125,6 +126,7 @@ add_library(sql_parser_library_memory STATIC
   src/specs/convert_tz.c
   src/specs/date_trunc.c
   src/specs/extract.c
+  src/specs/geo.c
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
@@ -190,6 +192,7 @@ add_library(sql_parser_library_static STATIC
   src/specs/convert_tz.c
   src/specs/date_trunc.c
   src/specs/extract.c
+  src/specs/geo.c
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
@@ -252,6 +255,7 @@ add_library(sql_parser_library_shared SHARED
   src/specs/convert_tz.c
   src/specs/date_trunc.c
   src/specs/extract.c
+  src/specs/geo.c
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c

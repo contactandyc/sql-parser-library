@@ -13,18 +13,6 @@ static inline bool is_context_error(sql_ctx_t *context) {
     return context->errors;
 }
 
-void add_child_node(sql_ast_node_t *parent, sql_ast_node_t *child) {
-    if (!parent->left) {
-        parent->left = child;
-    } else {
-        sql_ast_node_t *sibling = parent->left;
-        while (sibling->next) {
-            sibling = sibling->next;
-        }
-        sibling->next = child;
-    }
-}
-
 sql_ctx_column_t *get_column(const char *column_name, sql_ctx_t *context) {
     for (size_t i = 0; i < context->column_count; i++) {
         if (strcasecmp(context->columns[i].name, column_name) == 0) {
@@ -113,7 +101,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
 
 /* ------------------------------------------------------------------
- *  Arithmetic Expressions
+ * Arithmetic Expressions
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
@@ -189,7 +177,7 @@ sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *p
 }
 
 /* ------------------------------------------------------------------
- *  Primary, function calls, etc.
+ * Primary, function calls, etc.
  * ------------------------------------------------------------------ */
 
 size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos,
@@ -323,7 +311,37 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
     if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
         (*pos)++; // Consume '('
 
-        // Handle function arguments
+        // SPECIAL CASE: EXTRACT(part FROM date)
+        if (strcasecmp(func_name_token->token, "EXTRACT") == 0) {
+            sql_ast_node_t *field_node = NULL;
+            if (*pos < end_pos) {
+                field_node = create_ast_node(context, tokens[(*pos)++]);
+            }
+
+            if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "FROM") == 0) {
+                (*pos)++; // Consume FROM
+            } else {
+                sql_ctx_error(context, "Expected FROM in EXTRACT function");
+                return NULL;
+            }
+
+            sql_ast_node_t *source_node = parse_expression(context, tokens, pos, end_pos);
+
+            if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                (*pos)++; // Consume ')'
+            } else {
+                sql_ctx_error(context, "Expected closing parenthesis for EXTRACT");
+                return NULL;
+            }
+
+            sql_ast_node_t *from_node = create_ast_node(context, &(sql_token_t){SQL_KEYWORD, "FROM"});
+            from_node->left = field_node;
+            from_node->right = source_node;
+            func_node->left = from_node;
+            return func_node;
+        }
+
+        // Handle standard function arguments
         sql_ast_node_t *arg_list_head = NULL;
         sql_ast_node_t *arg_list_tail = NULL;
 
@@ -361,7 +379,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 
         func_node->left = arg_list_head; // Attach argument list
     } else {
-        // If there's no '(' => treat as a literal function?
+        // If there's no '(' => treat as a literal function
         func_node->type = SQL_FUNCTION_LITERAL;
         func_node->data_type = SQL_TYPE_STRING;
     }
@@ -370,7 +388,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 }
 
 /* ------------------------------------------------------------------
- *  Comparison & special operators (BETWEEN, IN, etc.)
+ * Comparison & special operators (BETWEEN, IN, etc.)
  * ------------------------------------------------------------------ */
 
 static sql_ast_node_t *parse_between(sql_ctx_t *context, sql_ast_node_t *left,
@@ -558,8 +576,8 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
         return NULL;
 
     /*
-     *  If you want to store all comparisons in a single direction,
-     *  e.g. rewriting A > B as B < A, you can restore your old “flip” logic:
+     * If you want to store all comparisons in a single direction,
+     * e.g. rewriting A > B as B < A, you can restore your old “flip” logic:
      */
     if (operator_token->token[0] == '>') {
         // Flip '>' to '<' and swap left/right
@@ -655,7 +673,7 @@ static sql_ast_node_t *parse_not_comparison_expression(sql_ctx_t *context,
 
 /**
  * parse_comparison: parse something like
- *   <arithmetic> [NOT] [= | <> | BETWEEN ... | IN ... | IS ... ]
+ * <arithmetic> [NOT] [= | <> | BETWEEN ... | IN ... | IS ... ]
  */
 sql_ast_node_t *parse_comparison(sql_ctx_t *context,
                                  sql_token_t **tokens,
@@ -695,10 +713,10 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context,
 }
 
 /* ------------------------------------------------------------------
- *  The new parse_unary function:
- *    - If we see NOT => parse another unary
- *    - If we see (  => parse full expression in parentheses
- *    - Otherwise => parse_comparison
+ * The new parse_unary function:
+ * - If we see NOT => parse another unary
+ * - If we see (  => parse full expression in parentheses
+ * - Otherwise => parse_comparison
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_unary(sql_ctx_t *context,
@@ -734,7 +752,7 @@ sql_ast_node_t *parse_unary(sql_ctx_t *context,
 }
 
 /* ------------------------------------------------------------------
- *  AND/OR: parse_and_expression, parse_expression
+ * AND/OR: parse_and_expression, parse_expression
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_and_expression(sql_ctx_t *context,
@@ -812,7 +830,7 @@ sql_ast_node_t *parse_expression(sql_ctx_t *context,
 }
 
 /* ------------------------------------------------------------------
- *  parse_in_list: (A, B, C) or [A, B, C]
+ * parse_in_list: (A, B, C) or [A, B, C]
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_in_list(sql_ctx_t *context,
@@ -882,80 +900,35 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context,
 }
 
 /* ------------------------------------------------------------------
- *  AST build for SELECT / FROM / WHERE at the top level
+ * AST build for Expression Evaluator
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token_count) {
-    sql_ast_node_t *root = create_ast_node(context, &(sql_token_t){SQL_KEYWORD, "ROOT"});
-    if (is_context_error(context))
+    if (token_count == 0) {
         return NULL;
+    }
+
     size_t pos = 0;
 
-    while (pos < token_count) {
-        sql_token_t *token = tokens[pos];
-        if (token->type == SQL_KEYWORD) {
-            if (strcasecmp(token->token, "SELECT") == 0) {
-                pos++;
-                sql_ast_node_t *select_node = create_ast_node(context, token);
-                if (is_context_error(context))
-                    return NULL;
-                // Parse columns until next keyword
-                while (pos < token_count && tokens[pos]->type != SQL_KEYWORD) {
-                    if (tokens[pos]->type == SQL_COMMA) {
-                        pos++; // Skip comma
-                        continue;
-                    }
-                    sql_ast_node_t *column_node = create_ast_node(context, tokens[pos++]);
-                    if (is_context_error(context))
-                        return NULL;
-                    add_child_node(select_node, column_node);
-                }
-                add_child_node(root, select_node);
-            }
-            else if (strcasecmp(token->token, "FROM") == 0) {
-                pos++;
-                sql_ast_node_t *from_node = create_ast_node(context, token);
-                if (is_context_error(context))
-                    return NULL;
-                // Parse tables until next keyword
-                while (pos < token_count && tokens[pos]->type != SQL_KEYWORD) {
-                    if (tokens[pos]->type == SQL_COMMA) {
-                        pos++; // Skip comma
-                        continue;
-                    }
-                    sql_ast_node_t *table_node = create_ast_node(context, tokens[pos++]);
-                    if (is_context_error(context))
-                        return NULL;
-                    add_child_node(from_node, table_node);
-                }
-                add_child_node(root, from_node);
-            }
-            else if (strcasecmp(token->token, "WHERE") == 0) {
-                pos++;
-                sql_ast_node_t *where_node = create_ast_node(context, token);
-                if (is_context_error(context))
-                    return NULL;
+    // Parse the entire token stream as a single boolean/arithmetic expression
+    sql_ast_node_t *root = parse_expression(context, tokens, &pos, token_count);
 
-                where_node->left = parse_expression(context, tokens, &pos, token_count);
-                if (is_context_error(context))
-                    return NULL;
-                add_child_node(root, where_node);
-            }
-            else {
-                // Other keywords?
-                pos++;
-            }
-        } else {
-            // Possibly a stray token
-            pos++;
-        }
+    if (is_context_error(context)) {
+        return NULL;
+    }
+
+    // If we haven't consumed all tokens (ignoring a trailing semicolon),
+    // it means there's invalid trailing syntax
+    if (pos < token_count && tokens[pos]->type != SQL_SEMICOLON) {
+        sql_ctx_error(context, "Unexpected token at end of expression: %s", tokens[pos]->token);
+        return NULL;
     }
 
     return root;
 }
 
 /* ------------------------------------------------------------------
- *  Debug printing of the AST
+ * Debug printing of the AST
  * ------------------------------------------------------------------ */
 
 void print_ast(sql_ast_node_t *node, int depth) {
@@ -1036,31 +1009,4 @@ void print_ast(sql_ast_node_t *node, int depth) {
     if (node->next) {
         print_ast(node->next, depth);
     }
-}
-
-sql_ast_node_t *find_clause(sql_ast_node_t *root, const char *clause_name) {
-    if (!root) return NULL;
-
-    if (root->type == SQL_KEYWORD && root->value &&
-        strcasecmp(root->value, clause_name) == 0) {
-        return root;
-    }
-
-    // Recursively search children
-    if (root->left) {
-        sql_ast_node_t *left_result = find_clause(root->left, clause_name);
-        if (left_result) return left_result;
-    }
-
-    if (root->right) {
-        sql_ast_node_t *right_result = find_clause(root->right, clause_name);
-        if (right_result) return right_result;
-    }
-
-    if (root->next) {
-        sql_ast_node_t *next_result = find_clause(root->next, clause_name);
-        if (next_result) return next_result;
-    }
-
-    return NULL;
 }

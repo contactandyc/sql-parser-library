@@ -17,67 +17,67 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes BETWEEN 100 AND 700",
+      "sql": "num_bytes BETWEEN 100 AND 700",
       "expected": ["xxx111", "zzz789"],
       "explanation": "Ensures BETWEEN range filtering works correctly."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes BETWEEN 50 AND 50",
+      "sql": "num_bytes BETWEEN 50 AND 50",
       "expected": ["def999"],
       "explanation": "Checks BETWEEN for an exact match."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE status IS NULL",
+      "sql": "status IS NULL",
       "expected": ["xxx111"],
       "explanation": "Ensures NULL filtering works."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE status IS NOT NULL",
+      "sql": "status IS NOT NULL",
       "expected": ["abc123", "zzz789", "def999"],
       "explanation": "Ensures IS NOT NULL works correctly."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type LIKE 'S%'",
+      "sql": "integration_type LIKE 'C%'",
       "expected": ["abc123", "zzz789"],
       "explanation": "Ensures LIKE prefix filtering works."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type LIKE '%M%'",
+      "sql": "integration_type LIKE '%M%'",
       "expected": ["def999", "xxx111"],
       "explanation": "Ensures LIKE with a substring match."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type NOT LIKE 'S%'",
+      "sql": "integration_type NOT LIKE 'C%'",
       "expected": ["def999", "xxx111"],
       "explanation": "Ensures NOT LIKE correctly excludes values."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes + 100 > 1100",
+      "sql": "num_bytes + 100 > 1100",
       "expected": ["abc123"],
       "explanation": "Ensures arithmetic expressions in WHERE work."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes * 2 = 1400",
+      "sql": "num_bytes * 2 = 1400",
       "expected": ["xxx111"],
       "explanation": "Ensures multiplication in WHERE works."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes / 2 = 25",
+      "sql": "num_bytes / 2 = 25",
       "expected": ["def999"],
       "explanation": "Ensures division in WHERE works."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type = 'CHAT_TOOL') AND (num_bytes > 500)",
+      "sql": "(integration_type = 'CHAT_TOOL') AND (num_bytes > 500)",
       "expected": ["abc123"],
       "explanation": "Ensures AND logic in WHERE clause."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type = 'CHAT_TOOL' OR num_bytes < 700)",
+      "sql": "NOT (integration_type = 'CHAT_TOOL' OR num_bytes < 700)",
       "expected": ["xxx111"],
       "explanation": "Ensures NOT applies correctly across conditions."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = ''",
+      "sql": "integration_type = ''",
       "expected": [],
       "explanation": "Ensures empty strings don’t match NULL."
     }
