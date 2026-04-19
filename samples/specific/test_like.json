@@ -28,20 +28,20 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE name LIKE 'A%'",
+            "sql": "name LIKE 'A%'",
             "expected": [
                 "1",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE name LIKE '_o%'",
+            "sql": "name LIKE '_o%'",
             "expected": [
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE name LIKE 'A_____%%'",
+            "sql": "name LIKE 'A_____%%'",
             "expected": [
                 "3"
             ]

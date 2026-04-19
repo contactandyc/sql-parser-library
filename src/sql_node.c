@@ -32,9 +32,9 @@ const char *sql_token_type_name(sql_token_type_t type) {
         case SQL_COMPOUND_LITERAL: return "COMPOUND_LITERAL";
         case SQL_LITERAL: return "LITERAL";
         case SQL_NULL: return "NULL";
-        case SQL_TOKEN: return "TOKEN"; // ast only
-        case SQL_STAR: return "STAR";  // ast only
-        case SQL_LIST: return "LIST";  // ast only
+        case SQL_TOKEN: return "TOKEN";
+        case SQL_STAR: return "STAR";
+        case SQL_LIST: return "LIST";
         default: return "UNKNOWN";
     }
 }
@@ -96,7 +96,6 @@ sql_node_t *sql_convert(sql_ctx_t *context, sql_node_t *param, sql_data_type_t t
     if (param->data_type == target_type) {
         return param;
     }
-
     return create_convert_node(context, param, target_type);
 }
 
@@ -139,15 +138,21 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         bool should_check = true;
         if (left_type == SQL_TYPE_DATETIME && right->type == SQL_COMPOUND_LITERAL) {
             const char *value = right->token;
-
             // Ensure the compound literal is a valid INTERVAL
             if (strncasecmp(value, "INTERVAL", 8) == 0) {
                 // Set the operator to a specialized datetime-interval handler
                 should_check = false;
             }
         }
-        if (!strcmp(node->token, "::"))
+        if (!strcmp(node->token, "::")) {
             should_check = false;
+        }
+
+        // CRITICAL FIX: Bypass generic coercion for date arithmetic
+        // to preserve INT/DOUBLE offsets (prevents INT 1 -> DATETIME 1 coercion)
+        if (node->token_type == SQL_OPERATOR && (left_type == SQL_TYPE_DATETIME || right_type == SQL_TYPE_DATETIME)) {
+            should_check = false;
+        }
 
         if (should_check && left_type != right_type) {
             if ((left->type == SQL_IDENTIFIER || left->type == SQL_FUNCTION) && is_literal(right)) {
@@ -223,17 +228,14 @@ static sql_data_type_t parse_data_type_from_string(const char *type_str) {
 void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
     if (!node) return;
 
-    // If no children and no function, nothing to do
     if (node->num_parameters == 0 && !node->func) {
         return;
     }
 
-    // Recurse into parameters first
     for (size_t i = 0; i < node->num_parameters; i++) {
         simplify_tree(ctx, node->parameters[i]);
     }
 
-    // Now try to simplify function calls (like simplify_func_tree)
     bool all_literals = true;
     for (size_t i = 0; i < node->num_parameters; i++) {
         if (!is_literal(node->parameters[i])) {
@@ -242,25 +244,20 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
         }
     }
 
-    // If all literals and node->func and (node->spec or ctx->row), evaluate the function
     if (all_literals && node->func && (node->spec || ctx->row)) {
         sql_node_t *result_node = node->func(ctx, node);
         if (result_node) {
-            // Replace current node with the result
             *node = *result_node;
         }
     }
 
-    // Now handle logical expression simplifications (like simplify_logical_expressions)
     sql_token_type_t node_type = node->token_type;
 
     if (node_type == SQL_AND) {
-        // Check if any literal `false`
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 !node->parameters[i]->value.bool_value) {
-                // Simplify to 'false'
                 node->token = "FALSE";
                 node->type = node->parameters[i]->type;
                 node->token_type = node->parameters[i]->token_type;
@@ -274,7 +271,6 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
             }
         }
 
-        // Remove literal `true` values
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (!(is_literal(node->parameters[i]) &&
@@ -285,17 +281,14 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
         }
         node->num_parameters = write_index;
 
-        // If only one term remains, replace the AND with that term
         if (node->num_parameters == 1) {
             *node = *node->parameters[0];
         }
     } else if (node_type == SQL_OR) {
-        // Check if any literal `true`
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 node->parameters[i]->value.bool_value) {
-                // Simplify to 'true'
                 node->token = "TRUE";
                 node->type = node->parameters[i]->type;
                 node->token_type = node->parameters[i]->token_type;
@@ -309,7 +302,6 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
             }
         }
 
-        // Remove literal `false` values
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (!(is_literal(node->parameters[i]) &&
@@ -320,7 +312,6 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
         }
         node->num_parameters = write_index;
 
-        // If only one term remains, replace the OR with that term
         if (node->num_parameters == 1) {
             *node = *node->parameters[0];
         }
@@ -348,12 +339,10 @@ void simplify_func_tree(sql_ctx_t *ctx, sql_node_t *node ) {
         return;
     }
 
-    // Simplify child nodes first
     for (size_t i = 0; i < node->num_parameters; i++) {
         simplify_func_tree(ctx, node->parameters[i]);
     }
 
-    // Check if the current node is a function with only literal parameters
     bool all_literals = true;
     for (size_t i = 0; i < node->num_parameters; i++) {
         if (!is_literal(node->parameters[i])) {
@@ -363,11 +352,9 @@ void simplify_func_tree(sql_ctx_t *ctx, sql_node_t *node ) {
     }
 
     if (all_literals && node->func && (node->spec || ctx->row)) {
-        // Evaluate the function
         sql_node_t *result_node = node->func(ctx, node);
 
         if (result_node) {
-            // Replace current node with the result
             *node = *result_node;
         }
     }
@@ -378,21 +365,17 @@ void simplify_logical_expressions(sql_node_t *node) {
         return;
     }
 
-    // Simplify child nodes first
     for (size_t i = 0; i < node->num_parameters; i++) {
         simplify_logical_expressions(node->parameters[i]);
     }
 
     sql_token_type_t node_type = node->token_type;
 
-    // Handle AND simplifications
     if (node_type == SQL_AND) {
-        // Check if any literal `false` exists
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 !node->parameters[i]->value.bool_value) {
-                // Simplify to `false`
                 node->token = "FALSE";
                 node->type = node->parameters[i]->type;
                 node->token_type = node->parameters[i]->token_type;
@@ -406,7 +389,6 @@ void simplify_logical_expressions(sql_node_t *node) {
             }
         }
 
-        // Remove literal `true` values
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (!(is_literal(node->parameters[i]) &&
@@ -417,20 +399,16 @@ void simplify_logical_expressions(sql_node_t *node) {
         }
         node->num_parameters = write_index;
 
-        // If only one term remains, replace the AND with that term
         if (node->num_parameters == 1) {
             *node = *node->parameters[0];
         }
     }
 
-    // Handle OR simplifications
     else if (node_type == SQL_OR) {
-        // Check if any literal `true` exists
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 node->parameters[i]->value.bool_value) {
-                // Simplify to `true`
                 node->token = "TRUE";
                 node->type = node->parameters[i]->type;
                 node->token_type = node->parameters[i]->token_type;
@@ -444,7 +422,6 @@ void simplify_logical_expressions(sql_node_t *node) {
             }
         }
 
-        // Remove literal `false` values
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
             if (!(is_literal(node->parameters[i]) &&
@@ -455,7 +432,6 @@ void simplify_logical_expressions(sql_node_t *node) {
         }
         node->num_parameters = write_index;
 
-        // If only one term remains, replace the OR with that term
         if (node->num_parameters == 1) {
             *node = *node->parameters[0];
         }
@@ -467,7 +443,6 @@ void print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
         return;
     }
 
-    // Indentation for readability
     for (int i = 0; i < depth; i++) printf("  ");
 
     const char *type_name = sql_token_type_name(node->type);
@@ -482,7 +457,6 @@ void print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
     printf("Type: %s, Value: %s, DataType: %s, Func: %s, %p\n", type_name, value, data_type_name, func_name,
             node->spec);
 
-    // Print the parameters recursively
     for (size_t i = 0; i < node->num_parameters; i++) {
         print_node(ctx, node->parameters[i], depth + 1);
     }
@@ -513,10 +487,10 @@ sql_node_t *sql_list_init(sql_ctx_t *ctx, size_t num_elements, bool is_null) {
     result->func = NULL;
     result->num_parameters = num_elements;
     result->parameters = (sql_node_t **)aml_pool_alloc(ctx->pool, num_elements * sizeof(sql_node_t *));
-    result->data_type = SQL_TYPE_UNKNOWN; // Determine common type dynamically
+    result->data_type = SQL_TYPE_UNKNOWN;
     result->type = SQL_LIST;
     result->token_type = SQL_LIST;
-    result->token = NULL; // Lists usually do not have a single token
+    result->token = NULL;
     result->is_null = is_null;
     return result;
 }

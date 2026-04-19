@@ -17,23 +17,23 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM documents WHERE integration_type = 'GMAIL' AND group_id NOT IN ('GROUP_A')",
+      "sql": "integration_type = 'GMAIL' AND group_id NOT IN ('GROUP_A')",
       "expected": ["2", "4", "6"]
     },
     {
-      "sql": "SELECT * FROM documents WHERE integration_type = 'GMAIL' AND (group_id IS NULL OR group_id NOT IN ('GROUP_A'))",
+      "sql": "integration_type = 'GMAIL' AND (group_id IS NULL OR group_id NOT IN ('GROUP_A'))",
       "expected": ["2", "4", "6"]
     },
     {
-      "sql": "SELECT * FROM documents WHERE group_id NOT IN ('GROUP_A')",
+      "sql": "group_id NOT IN ('GROUP_A')",
       "expected": ["2", "4", "6"]
     },
     {
-      "sql": "SELECT * FROM documents WHERE integration_type = 'GMAIL'",
+      "sql": "integration_type = 'GMAIL'",
       "expected": ["1", "2", "4", "6"]
     },
     {
-      "sql": "SELECT * FROM documents WHERE group_id NOT IN ('GROUP_A', 'GROUP_B')",
+      "sql": "group_id NOT IN ('GROUP_A', 'GROUP_B')",
       "expected": ["4", "6"]
     }
   ]

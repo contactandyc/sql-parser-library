@@ -54,7 +54,7 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM documents WHERE num_bytes BETWEEN 400 AND 800",
+            "sql": "num_bytes BETWEEN 400 AND 800",
             "expected": [
                 "1",
                 "4",
@@ -62,48 +62,48 @@
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE num_bytes NOT BETWEEN 400 AND 800",
+            "sql": "num_bytes NOT BETWEEN 400 AND 800",
             "expected": [
                 "2",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE YEAR(created_time) IN (2023, 2025)",
+            "sql": "YEAR(created_time) IN (2023, 2025)",
             "expected": [
                 "1",
                 "4"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE EXTRACT(YEAR FROM created_time) IN (2021, 2023)",
+            "sql": "EXTRACT(YEAR FROM created_time) IN (2021, 2023)",
             "expected": [
                 "1",
                 "5"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE DATEPART(YEAR, created_time) IN (2022, 2024)",
+            "sql": "DATEPART(YEAR, created_time) IN (2022, 2024)",
             "expected": [
                 "2",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE created_time BETWEEN '2023-01-01T00:00:00Z' AND '2024-01-01T00:00:00Z'",
+            "sql": "created_time BETWEEN '2023-01-01T00:00:00Z' AND '2024-01-01T00:00:00Z'",
             "expected": [
                 "1",
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE created_time >= '2024-01-01T00:00:00Z' AND created_time < '2025-01-01T00:00:00Z'",
+            "sql": "created_time >= '2024-01-01T00:00:00Z' AND created_time < '2025-01-01T00:00:00Z'",
             "expected": [
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM documents WHERE source_integration = 'google_drive' AND YEAR(created_time) IN (2021, 2025)",
+            "sql": "source_integration = 'google_drive' AND YEAR(created_time) IN (2021, 2025)",
             "expected": [
                 "5"
             ]

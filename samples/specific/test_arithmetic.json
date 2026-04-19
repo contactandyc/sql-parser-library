@@ -28,19 +28,19 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes + 100 > 400",
+            "sql": "num_bytes + 100 > 400",
             "expected": [
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes * 2 = 1400",
+            "sql": "num_bytes * 2 = 1400",
             "expected": [
                 "2"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes / 2 = 25",
+            "sql": "num_bytes / 2 = 25",
             "expected": [
                 "3"
             ]

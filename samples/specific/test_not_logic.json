@@ -35,14 +35,14 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE NOT category = 'A'",
+            "sql": "NOT category = 'A'",
             "expected": [
                 "2",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE NOT (num_bytes > 1000 OR category = 'C')",
+            "sql": "NOT (num_bytes > 1000 OR category = 'C')",
             "expected": [
                 "1"
             ]

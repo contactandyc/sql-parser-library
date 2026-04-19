@@ -36,147 +36,147 @@
   },
   "queries": [
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes > 1000",
+      "sql": "num_bytes > 1000",
       "expected": ["abc123"],
       "explanation": "Only abc123 has num_bytes = 1024, which is greater than 1000."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes < 100",
+      "sql": "num_bytes < 100",
       "expected": ["def999"],
       "explanation": "Only def999 has num_bytes = 50, which is less than 100."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = 'GMAIL'",
+      "sql": "integration_type = 'GMAIL'",
       "expected": ["def999"],
       "explanation": "Only def999 has integration_type = 'GMAIL'."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type = 'CHAT_TOOL'",
+      "sql": "integration_type = 'CHAT_TOOL'",
       "expected": ["abc123", "zzz789"],
       "explanation": "abc123 and zzz789 both have integration_type = 'CHAT_TOOL'."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time > 1692654952",
+      "sql": "created_time > 1692654952",
       "expected": ["def999", "xxx111"],
       "explanation": "def999 (1692655000) and xxx111 (1692656000) both have created_time greater than 1692654952."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time < 1692655000",
+      "sql": "created_time < 1692655000",
       "expected": ["abc123", "zzz789"],
       "explanation": "abc123 (1692654952) and zzz789 (1692654000) both have created_time less than 1692655000."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time >= 1692654000 AND created_time <= 1692655000",
+      "sql": "created_time >= 1692654000 AND created_time <= 1692655000",
       "expected": ["abc123", "def999", "zzz789"],
       "explanation": "abc123 (4952), def999 (5000), and zzz789 (4000) all fall within range."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time > 1692654000 AND created_time < 1692655000",
+      "sql": "created_time > 1692654000 AND created_time < 1692655000",
       "expected": ["abc123"],
       "explanation": "Strict range excludes exact 4000 (zzz789) and 5000 (def999), leaving only abc123."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes = 1024",
+      "sql": "num_bytes = 1024",
       "expected": ["abc123"],
       "explanation": "Only abc123 has num_bytes = 1024."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes = 50",
+      "sql": "num_bytes = 50",
       "expected": ["def999"],
       "explanation": "Only def999 has num_bytes = 50."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time = 1692654000",
+      "sql": "created_time = 1692654000",
       "expected": ["zzz789"],
       "explanation": "Only zzz789 has created_time = 1692654000."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE created_time = 1692655000",
+      "sql": "created_time = 1692655000",
       "expected": ["def999"],
       "explanation": "Only def999 has created_time = 1692655000."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes BETWEEN 50 AND 700",
+      "sql": "num_bytes BETWEEN 50 AND 700",
       "expected": ["def999", "xxx111", "zzz789"],
       "explanation": "All rows where num_bytes is in range 50-700 are included."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes NOT BETWEEN 50 AND 700",
+      "sql": "num_bytes NOT BETWEEN 50 AND 700",
       "expected": ["abc123"],
       "explanation": "Only abc123 falls outside the range."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type IN ('GMAIL', 'CHAT_TOOL')",
+      "sql": "integration_type IN ('GMAIL', 'CHAT_TOOL')",
       "expected": ["abc123", "zzz789", "def999"],
       "explanation": "All rows with integration_type matching GMAIL or CHAT_TOOL."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type NOT IN ('GMAIL', 'CHAT_TOOL')",
+      "sql": "integration_type NOT IN ('GMAIL', 'CHAT_TOOL')",
       "expected": ["xxx111"],
       "explanation": "Only xxx111 does not match GMAIL or CHAT_TOOL."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type IS NULL",
+      "sql": "integration_type IS NULL",
       "expected": [],
       "explanation": "There are no NULL values in integration_type."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type IS NOT NULL",
+      "sql": "integration_type IS NOT NULL",
       "expected": ["abc123", "zzz789", "def999", "xxx111"],
       "explanation": "All rows have a non-null value for integration_type."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (num_bytes > 200) AND (integration_type = 'CHAT_TOOL')",
+      "sql": "(num_bytes > 200) AND (integration_type = 'CHAT_TOOL')",
       "expected": ["abc123"],
       "explanation": "Only CHAT_TOOL rows with num_bytes > 200."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (num_bytes < 1000)",
+      "sql": "NOT (num_bytes < 1000)",
       "expected": ["abc123"],
       "explanation": "Only abc123 does not satisfy the condition num_bytes < 1000."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE LENGTH(integration_type) = 5",
-      "expected": ["abc123", "def999", "zzz789"],
-      "explanation": "Checking string length function."
+      "sql": "LENGTH(integration_type) = 5",
+      "expected": ["def999"],
+      "explanation": "Checking string length function. Only GMAIL has length 5."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes >= 1024",
+      "sql": "num_bytes >= 1024",
       "expected": ["abc123"],
       "explanation": "Only abc123 meets the condition num_bytes >= 1024."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes <= 200",
+      "sql": "num_bytes <= 200",
       "expected": ["def999", "zzz789"],
       "explanation": "Only def999 (50) and zzz789 (200) meet the condition num_bytes <= 200."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes != 1024",
+      "sql": "num_bytes != 1024",
       "expected": ["def999", "xxx111", "zzz789"],
       "explanation": "All rows except abc123 are returned because their num_bytes is not 1024."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type LIKE 'G%'",
+      "sql": "integration_type LIKE 'G%'",
       "expected": ["def999"],
       "explanation": "Only def999 starts with 'G' (GMAIL)."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE integration_type NOT LIKE 'C%'",
+      "sql": "integration_type NOT LIKE 'C%'",
       "expected": ["def999", "xxx111"],
       "explanation": "Rows where integration_type does not start with 'C' (CHAT_TOOL)."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE num_bytes + 100 > 1100",
+      "sql": "num_bytes + 100 > 1100",
       "expected": ["abc123"],
       "explanation": "Checking arithmetic expressions in conditions."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE NOT (integration_type = 'CHAT_TOOL' OR num_bytes < 700)",
+      "sql": "NOT (integration_type = 'CHAT_TOOL' OR num_bytes < 700)",
       "expected": ["xxx111"],
       "explanation": "Ensuring NOT applies to the full condition correctly."
     },
     {
-      "sql": "SELECT * FROM my_table WHERE (integration_type = 'CHAT_TOOL') AND NOT (num_bytes < 500)",
+      "sql": "(integration_type = 'CHAT_TOOL') AND NOT (num_bytes < 500)",
       "expected": ["abc123"],
       "explanation": "Ensuring NOT inside parentheses affects only part of the condition."
     }

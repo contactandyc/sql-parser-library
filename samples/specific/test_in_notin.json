@@ -35,21 +35,21 @@
     },
     "queries": [
         {
-            "sql": "SELECT * FROM my_table WHERE category IN ('A', 'C')",
+            "sql": "category IN ('A', 'C')",
             "expected": [
                 "1",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE num_bytes IN (500, 1024)",
+            "sql": "num_bytes IN (500, 1024)",
             "expected": [
                 "2",
                 "3"
             ]
         },
         {
-            "sql": "SELECT * FROM my_table WHERE category NOT IN ('A', 'B')",
+            "sql": "category NOT IN ('A', 'B')",
             "expected": [
                 "3"
             ]
