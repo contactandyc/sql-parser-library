@@ -98,7 +98,7 @@ void sql_reserve_default_keywords(sql_ctx_t *ctx) {
         "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
         "JOIN", "ON", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
         "GROUP", "HAVING", "LIMIT", "OFFSET",
-        "AS", "IS", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "EXISTS",
+        "AS", "IS", "DISTINCT", "WHEN", "THEN", "ELSE", "END", "EXISTS",
         "DOUBLE", "FLOAT", "INT", "INTEGER", "BOOL", "BOOLEAN", "DATETIME"
     };
     for(size_t i = 0; i < sizeof(sql_keywords) / sizeof(sql_keywords[0]); i++) {

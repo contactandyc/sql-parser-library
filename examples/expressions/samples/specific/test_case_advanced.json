@@ -1,0 +1,39 @@
+{
+  "table": {
+    "name": "employees",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "department", "type": "STRING" },
+      { "name": "salary", "type": "INT" },
+      { "name": "performance_score", "type": "DOUBLE" }
+    ],
+    "rows": [
+      { "id": "1", "department": "Sales", "salary": 50000, "performance_score": 4.5 },
+      { "id": "2", "department": "Engineering", "salary": 120000, "performance_score": 4.8 },
+      { "id": "3", "department": "HR", "salary": 60000, "performance_score": 3.2 },
+      { "id": "4", "department": "Sales", "salary": 85000, "performance_score": 2.5 }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "CASE WHEN department = 'Sales' AND salary > 60000 THEN 'Senior' ELSE 'Standard' END = 'Senior'",
+      "expected": ["4"],
+      "explanation": "Tests complex AND logic inside the WHEN condition."
+    },
+    {
+      "sql": "CASE WHEN performance_score > 4.0 THEN 'Top' END IS NULL",
+      "expected": ["3", "4"],
+      "explanation": "Tests the implicit NULL fallback when an ELSE clause is omitted and no WHEN conditions are met."
+    },
+    {
+      "sql": "CASE WHEN department = 'Engineering' THEN (CASE WHEN salary > 100000 THEN 'Principal' ELSE 'Engineer' END) ELSE 'Non-Eng' END = 'Principal'",
+      "expected": ["2"],
+      "explanation": "Tests deeply nested CASE statements."
+    },
+    {
+      "sql": "CASE WHEN salary BETWEEN 50000 AND 70000 THEN 'Band A' WHEN salary > 70000 THEN 'Band B' ELSE 'Unknown' END = 'Band B'",
+      "expected": ["2", "4"],
+      "explanation": "Tests multi-branch CASE statements with BETWEEN evaluation."
+    }
+  ]
+}
