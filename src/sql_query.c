@@ -1,5 +1,8 @@
 // SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
+// SPDX-FileCopyrightText: 2024–2025 Knode.ai
 // SPDX-License-Identifier: Apache-2.0
+//
+// Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_query.h"
 #include "a-memory-library/aml_pool.h"
@@ -391,6 +394,7 @@ static char *ast_list_to_string(sql_ctx_t *ctx, sql_ast_node_t *head) {
     return result;
 }
 
+// Inside sql_query.c -> ast_to_string()
 static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
     if (!node) return aml_pool_strdup(ctx->pool, "");
 
@@ -398,13 +402,20 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
         case SQL_IDENTIFIER:
         case SQL_NUMBER:
         case SQL_COMPOUND_LITERAL:
+            if (strncasecmp(node->value, "TIMESTAMP ", 10) == 0 && node->value[10] != '\'') {
+                return aml_pool_strdupf(ctx->pool, "TIMESTAMP '%s'", node->value + 10);
+            }
+            return aml_pool_strdup(ctx->pool, node->value);
+        case SQL_KEYWORD: // <--- CRITICAL FIX: Ensure keywords (like LIMIT) stringify correctly if captured as expressions
             return aml_pool_strdup(ctx->pool, node->value);
 
         case SQL_NULL:
             return aml_pool_strdup(ctx->pool, "NULL");
 
         case SQL_LITERAL:
-            // Re-wrap string literals in single quotes
+            if (node->data_type == SQL_TYPE_BOOL) {
+                return aml_pool_strdup(ctx->pool, node->value);
+            }
             return aml_pool_strdupf(ctx->pool, "'%s'", node->value);
 
         case SQL_FUNCTION_LITERAL:
@@ -412,46 +423,37 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
 
         case SQL_NOT: {
             char *inner = ast_to_string(ctx, node->left);
-            return aml_pool_strdupf(ctx->pool, "NOT %s", inner);
+            return aml_pool_strdupf(ctx->pool, "(NOT %s)", inner);
         }
 
         case SQL_AND:
         case SQL_OR:
         case SQL_OPERATOR:
         case SQL_COMPARISON: {
-            // Special Cases
             if (strcasecmp(node->value, "BETWEEN") == 0 || strcasecmp(node->value, "NOT BETWEEN") == 0) {
                 char *left = ast_to_string(ctx, node->left);
                 char *lower = ast_to_string(ctx, node->right->left);
                 char *upper = ast_to_string(ctx, node->right->right);
-                return aml_pool_strdupf(ctx->pool, "%s %s %s AND %s", left, node->value, lower, upper);
+                return aml_pool_strdupf(ctx->pool, "(%s %s %s AND %s)", left, node->value, lower, upper);
             }
 
-            if (strcasecmp(node->value, "IS NULL") == 0 || strcasecmp(node->value, "IS NOT NULL") == 0 ||
-                strcasecmp(node->value, "IS TRUE") == 0 || strcasecmp(node->value, "IS FALSE") == 0) {
+            if (strncasecmp(node->value, "IS", 2) == 0) {
                 char *left = ast_to_string(ctx, node->left);
-                return aml_pool_strdupf(ctx->pool, "%s %s", left, node->value);
+                return aml_pool_strdupf(ctx->pool, "(%s %s)", left, node->value);
             }
 
             if (strcasecmp(node->value, "IN") == 0 || strcasecmp(node->value, "NOT IN") == 0) {
                 char *left = ast_to_string(ctx, node->left);
                 char *list = ast_to_string(ctx, node->right);
-                return aml_pool_strdupf(ctx->pool, "%s %s %s", left, node->value, list);
+                return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left, node->value, list);
             }
 
-            // Standard binary operators
             if (node->left && node->right) {
                 char *left = ast_to_string(ctx, node->left);
                 char *right = ast_to_string(ctx, node->right);
-
-                // Wrap logic/math in parentheses to preserve precedence
-                if (node->type == SQL_AND || node->type == SQL_OR || node->type == SQL_OPERATOR) {
-                    return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left, node->value, right);
-                }
-                return aml_pool_strdupf(ctx->pool, "%s %s %s", left, node->value, right);
+                return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left, node->value, right);
             }
 
-            // Fallback for unary math like "+123"
             if (node->left) {
                 return aml_pool_strdupf(ctx->pool, "%s%s", node->value, ast_to_string(ctx, node->left));
             }
@@ -459,14 +461,11 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
         }
 
         case SQL_FUNCTION: {
-            // Special handling for EXTRACT(part FROM date)
             if (node->left && node->left->type == SQL_KEYWORD && strcasecmp(node->left->value, "FROM") == 0) {
-                char *field = ast_to_string(ctx, node->left->left);
+                char *field = node->left->left->value;
                 char *source = ast_to_string(ctx, node->left->right);
                 return aml_pool_strdupf(ctx->pool, "EXTRACT(%s FROM %s)", field, source);
             }
-
-            // Standard function
             char *args = ast_list_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
         }

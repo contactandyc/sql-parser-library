@@ -13,7 +13,13 @@ depends_on:
   - https://github.com/contactandyc/the-macro-library.git
 
 examples:
+  depends_on:
+    - https://github.com/contactandyc/a-json-library.git
   expressions:
     targets:
       expressions:
+        - src/main.c
+  parse_sql:
+    targets:
+      parse_sql:
         - src/main.c

@@ -1,0 +1,176 @@
+{
+  "queries": [
+    {
+      "sql": "SELECT id, name FROM users",
+      "expected": "SELECT id, name FROM users"
+    },
+    {
+      "sql": "SELECT * FROM users WHERE age = 25",
+      "expected": "SELECT * FROM users WHERE (age = 25)"
+    },
+    {
+      "sql": "SELECT age * 2 AS double_age FROM users",
+      "expected": "SELECT (age * 2) AS double_age FROM users"
+    },
+    {
+      "sql": "SELECT (age + 5) * 10 FROM users",
+      "expected": "SELECT ((age + 5) * 10) FROM users"
+    },
+    {
+      "sql": "SELECT -5 + 10 * 2 AS math_test FROM math",
+      "expected": "SELECT (-5 + (10 * 2)) AS math_test FROM math"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE a < 10 AND b > 20",
+      "expected": "SELECT * FROM t WHERE ((a < 10) AND (20 < b))"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE (a = 1 OR b = 2) AND c = 3",
+      "expected": "SELECT * FROM t WHERE (((a = 1) OR (b = 2)) AND (c = 3))"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE a = 1 OR b = 2 AND c = 3",
+      "expected": "SELECT * FROM t WHERE ((a = 1) OR ((b = 2) AND (c = 3)))"
+    },
+    {
+      "sql": "SELECT name FROM t WHERE name LIKE '%smith%'",
+      "expected": "SELECT name FROM t WHERE (name LIKE '%smith%')"
+    },
+    {
+      "sql": "SELECT name FROM t WHERE name NOT LIKE 'admin%'",
+      "expected": "SELECT name FROM t WHERE (name NOT LIKE 'admin%')"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE status IN ('active', 'pending')",
+      "expected": "SELECT * FROM t WHERE (status IN ('active', 'pending'))"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE id NOT IN (1, 2, 3)",
+      "expected": "SELECT * FROM t WHERE (id NOT IN (1, 2, 3))"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE age BETWEEN 18 AND 65",
+      "expected": "SELECT * FROM t WHERE (age BETWEEN 18 AND 65)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE age NOT BETWEEN 13 AND 19",
+      "expected": "SELECT * FROM t WHERE (age NOT BETWEEN 13 AND 19)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE deleted_at IS NULL",
+      "expected": "SELECT * FROM t WHERE (deleted_at IS NULL)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE deleted_at IS NOT NULL",
+      "expected": "SELECT * FROM t WHERE (deleted_at IS NOT NULL)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE is_admin IS TRUE",
+      "expected": "SELECT * FROM t WHERE (is_admin IS TRUE)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE is_guest IS FALSE",
+      "expected": "SELECT * FROM t WHERE (is_guest IS FALSE)"
+    },
+    {
+      "sql": "SELECT a FROM t WHERE NOT is_deleted AND status = 'active'",
+      "expected": "SELECT a FROM t WHERE ((NOT is_deleted) AND (status = 'active'))"
+    },
+    {
+      "sql": "SELECT name FROM t WHERE name = 'O''Connor'",
+      "expected": "SELECT name FROM t WHERE (name = 'O''Connor')"
+    },
+    {
+      "sql": "SELECT CONCAT(first_name, ' ', last_name) AS full_name FROM users",
+      "expected": "SELECT CONCAT(first_name, ' ', last_name) AS full_name FROM users"
+    },
+    {
+      "sql": "SELECT LOWER(email) FROM users",
+      "expected": "SELECT LOWER(email) FROM users"
+    },
+    {
+      "sql": "SELECT UPPER(status) FROM orders",
+      "expected": "SELECT UPPER(status) FROM orders"
+    },
+    {
+      "sql": "SELECT TRIM(name) FROM users",
+      "expected": "SELECT TRIM(name) FROM users"
+    },
+    {
+      "sql": "SELECT SUBSTR(name, 1, 5) FROM users",
+      "expected": "SELECT SUBSTR(name, 1, 5) FROM users"
+    },
+    {
+      "sql": "SELECT LENGTH(password_hash) FROM users",
+      "expected": "SELECT LENGTH(password_hash) FROM users"
+    },
+    {
+      "sql": "SELECT COALESCE(phone, email, 'N/A') FROM contacts",
+      "expected": "SELECT COALESCE(phone, email, 'N/A') FROM contacts"
+    },
+    {
+      "sql": "SELECT SUM(amount) FROM orders",
+      "expected": "SELECT SUM(amount) FROM orders"
+    },
+    {
+      "sql": "SELECT AVG(score) FROM reviews",
+      "expected": "SELECT AVG(score) FROM reviews"
+    },
+    {
+      "sql": "SELECT MIN(price), MAX(price) FROM products",
+      "expected": "SELECT MIN(price), MAX(price) FROM products"
+    },
+    {
+      "sql": "SELECT ROUND(price) FROM products",
+      "expected": "SELECT ROUND(price) FROM products"
+    },
+    {
+      "sql": "SELECT ROUND(price, 2) FROM products",
+      "expected": "SELECT ROUND(price, 2) FROM products"
+    },
+    {
+      "sql": "SELECT FLOOR(rating), CEIL(rating) FROM reviews",
+      "expected": "SELECT FLOOR(rating), CEIL(rating) FROM reviews"
+    },
+    {
+      "sql": "SELECT EXTRACT(YEAR FROM created_at) FROM users",
+      "expected": "SELECT EXTRACT(YEAR FROM created_at) FROM users"
+    },
+    {
+      "sql": "SELECT DATE_TRUNC('month', created_at) FROM users",
+      "expected": "SELECT DATE_TRUNC('month', created_at) FROM users"
+    },
+    {
+      "sql": "SELECT NOW() FROM system",
+      "expected": "SELECT NOW() FROM system"
+    },
+    {
+      "sql": "SELECT * FROM events WHERE created_at > TIMESTAMP '2023-01-01 00:00:00'",
+      "expected": "SELECT * FROM events WHERE (TIMESTAMP '2023-01-01 00:00:00' < created_at)"
+    },
+    {
+      "sql": "SELECT * FROM events WHERE created_at < NOW() + INTERVAL 1 DAY",
+      "expected": "SELECT * FROM events WHERE (created_at < (NOW() + INTERVAL 1 DAY))"
+    },
+    {
+      "sql": "SELECT u.name, o.amount FROM users u INNER JOIN orders o ON u.id = o.user_id",
+      "expected": "SELECT u.name, o.amount FROM users AS u INNER JOIN orders AS o ON (u.id = o.user_id)"
+    },
+    {
+      "sql": "SELECT a.id, b.id, c.id FROM table_a a LEFT JOIN table_b b ON a.b_id = b.id RIGHT JOIN table_c c ON b.c_id = c.id",
+      "expected": "SELECT a.id, b.id, c.id FROM table_a AS a LEFT JOIN table_b AS b ON (a.b_id = b.id) RIGHT JOIN table_c AS c ON (b.c_id = c.id)"
+    },
+    {
+      "sql": "SELECT department, SUM(salary) FROM employees GROUP BY department HAVING SUM(salary) >= 1000000",
+      "expected": "SELECT department, SUM(salary) FROM employees GROUP BY department HAVING (1000000 <= SUM(salary))"
+    },
+    {
+      "sql": "SELECT * FROM leaderboard ORDER BY score DESC, time ASC LIMIT 10 OFFSET 20",
+      "expected": "SELECT * FROM leaderboard ORDER BY score DESC, time ASC LIMIT 10 OFFSET 20"
+    },
+    {
+      "sql": "SELECT * FROM pagination LIMIT 100 / 10 OFFSET 5 * 2",
+      "expected": "SELECT * FROM pagination LIMIT (100 / 10) OFFSET (5 * 2)"
+    }
+  ]
+}

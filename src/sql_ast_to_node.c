@@ -100,7 +100,23 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
             break;
         case SQL_TYPE_DATETIME: {
                 time_t epoch = 0;
-                if (convert_string_to_datetime(&epoch, pool, ast->value)) {
+                const char *val_ptr = ast->value;
+                char *clean_val = NULL;
+
+                // Strip prefix and quotes for the runtime epoch converter
+                if (ast->type == SQL_COMPOUND_LITERAL && strncasecmp(val_ptr, "TIMESTAMP", 9) == 0) {
+                    val_ptr += 9;
+                    while (isspace(*val_ptr)) val_ptr++;
+                    if (*val_ptr == '\'') val_ptr++;
+
+                    clean_val = aml_pool_strdup(pool, val_ptr);
+                    if (strlen(clean_val) > 0 && clean_val[strlen(clean_val)-1] == '\'') {
+                        clean_val[strlen(clean_val)-1] = '\0';
+                    }
+                    val_ptr = clean_val;
+                }
+
+                if (convert_string_to_datetime(&epoch, pool, val_ptr)) {
                     node->value.epoch = epoch;
                 } else {
                     node->is_null = true;

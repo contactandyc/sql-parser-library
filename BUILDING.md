@@ -1,7 +1,7 @@
 # BUILDING
 
 This project: **SQL Parser Library**
-Version: **0.1.6**
+Version: **0.1.8**
 
 ## Local build
 
@@ -58,5 +58,33 @@ cd "a-memory-library"
 ./build.sh install
 cd ..
 rm -rf "a-memory-library"
+```
+
+
+### a-json-sax-library
+
+Clone & build:
+
+```bash
+git clone --depth 1 --single-branch "https://github.com/contactandyc/a-json-sax-library.git" "a-json-sax-library"
+cd "a-json-sax-library"
+./build.sh clean
+./build.sh install
+cd ..
+rm -rf "a-json-sax-library"
+```
+
+
+### a-json-library
+
+Clone & build:
+
+```bash
+git clone --depth 1 --single-branch "https://github.com/contactandyc/a-json-library.git" "a-json-library"
+cd "a-json-library"
+./build.sh clean
+./build.sh install
+cd ..
+rm -rf "a-json-library"
 ```
 

@@ -8,7 +8,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(sql_parser_library
-  VERSION 0.1.6
+  VERSION 0.1.8
   LANGUAGES C
 )
 # ── Variant selection for the umbrella alias ──────────────────────────────────
@@ -81,6 +81,7 @@ add_library(sql_parser_library_debug STATIC
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -144,6 +145,7 @@ add_library(sql_parser_library_memory STATIC
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -210,6 +212,7 @@ add_library(sql_parser_library_static STATIC
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -273,6 +276,7 @@ add_library(sql_parser_library_shared SHARED
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -382,3 +386,6 @@ install(FILES
 
 
 # Dynamically mount all subprojects (apps, examples, tests, etc.)
+# # add_subdirectory(examples/expressions)
+# # add_subdirectory(examples/parse_sql)
+# 

@@ -94,8 +94,11 @@ bool sql_ctx_is_reserved_keyword(sql_ctx_t *ctx, const char *keyword) {
 }
 
 void sql_reserve_default_keywords(sql_ctx_t *ctx) {
-    // Stripped structural keywords (SELECT, WHERE, FROM, JOIN, LIMIT, etc.)
+    // Added GROUP, HAVING, LIMIT, OFFSET
     static const char *sql_keywords[] = {
+        "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
+        "JOIN", "ON", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
+        "GROUP", "HAVING", "LIMIT", "OFFSET",
         "AS", "IS", "DISTINCT", "CASE", "WHEN", "THEN", "END", "EXISTS",
         "DOUBLE", "FLOAT", "INT", "INTEGER", "BOOL", "BOOLEAN", "DATETIME"
     };

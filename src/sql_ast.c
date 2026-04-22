@@ -23,7 +23,7 @@ sql_ctx_column_t *get_column(const char *column_name, sql_ctx_t *context) {
 }
 
 sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
-    sql_ast_node_t *node = (sql_ast_node_t *)aml_pool_alloc(context->pool, sizeof(sql_ast_node_t));
+    sql_ast_node_t *node = (sql_ast_node_t *)aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
     node->type = token->type;
     node->value = token->token ? aml_pool_strdup(context->pool, token->token) : NULL;
     node->spec = token->spec;
@@ -58,9 +58,6 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
             if (!strncasecmp(token->token, "TIMESTAMP", 9)) {
                 time_t epoch = 0;
                 if (convert_string_to_datetime(&epoch, context->pool, token->token+10)) {
-                    sql_ctx_warning(context, "Valid timestamp: %s", token->token);
-                    char *iso_utc = convert_epoch_to_iso_utc(context->pool, epoch);
-                    node->value = iso_utc;
                     node->data_type = SQL_TYPE_DATETIME;
                 } else {
                     sql_ctx_error(context, "Invalid timestamp format: %s", token->token);
@@ -105,19 +102,6 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *
  * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
-    // Handle unary +/-
-    if (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
-        (tokens[*pos]->token[0] == '+' || tokens[*pos]->token[0] == '-')) {
-        sql_token_t *unary_op = tokens[(*pos)++];
-        sql_ast_node_t *node = create_ast_node(context, unary_op);
-        if (is_context_error(context))
-            return NULL;
-        node->left = parse_arithmetic_expression(context, tokens, pos, end_pos);
-        if (is_context_error(context))
-            return NULL;
-        return node;
-    }
-
     sql_ast_node_t *left = parse_term(context, tokens, pos, end_pos);
     if (is_context_error(context))
         return NULL;
@@ -126,17 +110,17 @@ sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **to
            (tokens[*pos]->token[0] == '+' || tokens[*pos]->token[0] == '-')) {
         sql_token_t *operator_token = tokens[(*pos)++];
         sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
-        if (is_context_error(context))
-            return NULL;
+        if (is_context_error(context)) return NULL;
+
         operator_node->left = left;
         operator_node->right = parse_term(context, tokens, pos, end_pos);
-        if (is_context_error(context))
-            return NULL;
+        if (is_context_error(context)) return NULL;
         left = operator_node;
     }
 
     return left;
 }
+
 
 sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_factor(context, tokens, pos, end_pos);
@@ -160,16 +144,15 @@ sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos
 }
 
 sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
-    if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
-        (*pos)++; // Consume '('
-        sql_ast_node_t *node = parse_arithmetic_expression(context, tokens, pos, end_pos);
-        if (is_context_error(context))
-            return NULL;
-        if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-            (*pos)++; // Consume ')'
-        } else {
-            sql_ctx_error(context, "Expected closing parenthesis in arithmetic expression");
-        }
+    // Handle unary +/- (Moved from parse_arithmetic_expression)
+    if (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
+        (tokens[*pos]->token[0] == '+' || tokens[*pos]->token[0] == '-')) {
+        sql_token_t *unary_op = tokens[(*pos)++];
+        sql_ast_node_t *node = create_ast_node(context, unary_op);
+        if (is_context_error(context)) return NULL;
+
+        node->left = parse_factor(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
         return node;
     }
 
@@ -692,8 +675,16 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context,
             return parse_not_comparison_expression(context, left, tokens, pos, end_pos);
         }
 
-        // If next token is a comparison operator or keyword => parse standard comparison
-        if (tokens[*pos]->type == SQL_COMPARISON || tokens[*pos]->type == SQL_KEYWORD) {
+        // Check if the keyword is explicitly a comparison keyword
+        bool is_comparison_keyword =
+            tokens[*pos]->type == SQL_KEYWORD &&
+            (strcasecmp(tokens[*pos]->token, "BETWEEN") == 0 ||
+             strcasecmp(tokens[*pos]->token, "IN")      == 0 ||
+             strcasecmp(tokens[*pos]->token, "IS")      == 0 ||
+             strcasecmp(tokens[*pos]->token, "LIKE")    == 0);
+
+        // If next token is a comparison operator or a valid comparison keyword
+        if (tokens[*pos]->type == SQL_COMPARISON || is_comparison_keyword) {
             sql_token_t *operator_token = tokens[(*pos)++];
             // e.g. =, <, >, BETWEEN, IN, IS, ...
             if (strcasecmp(operator_token->token, "BETWEEN") == 0) {
@@ -719,35 +710,17 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context,
  * - Otherwise => parse_comparison
  * ------------------------------------------------------------------ */
 
-sql_ast_node_t *parse_unary(sql_ctx_t *context,
-                            sql_token_t **tokens,
-                            size_t *pos,
-                            size_t end_pos)
-{
+sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     // Check for unary NOT
     if (*pos < end_pos && tokens[*pos]->type == SQL_NOT) {
         sql_token_t *not_token = tokens[(*pos)++];
         sql_ast_node_t *not_node = create_ast_node(context, not_token);
         if (is_context_error(context)) return NULL;
 
-        // Recursively parse the next “unary” item
         not_node->left = parse_unary(context, tokens, pos, end_pos);
         return not_node;
     }
 
-    // Check for parentheses => parse full sub-expression
-    if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
-        (*pos)++; // consume '('
-        sql_ast_node_t *expr = parse_expression(context, tokens, pos, end_pos);
-        if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-            (*pos)++; // consume ')'
-        } else {
-            sql_ctx_error(context, "Expected closing parenthesis in parse_unary");
-        }
-        return expr;
-    }
-
-    // Otherwise, parse a comparison-level expression
     return parse_comparison(context, tokens, pos, end_pos);
 }
 
@@ -838,7 +811,7 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context,
                               size_t *pos,
                               size_t token_count)
 {
-    sql_ast_node_t *list_node = (sql_ast_node_t *)aml_pool_alloc(context->pool, sizeof(sql_ast_node_t));
+    sql_ast_node_t *list_node = (sql_ast_node_t *)aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
     list_node->type = SQL_LIST;
     list_node->value = NULL;
     list_node->left = NULL;

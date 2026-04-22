@@ -42,45 +42,40 @@ sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *sta
 void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
                       size_t length, const char **s) {
     aml_pool_t *pool = context->pool;
-    // Handle TIMESTAMP followed by a literal or unquoted timestamp and treat as COMPOUND LITERAL
-    while (isspace(**s)) (*s)++; // Skip whitespace
+    const char *peek = *s;
 
-    const char *literal_start = *s;
-    if (**s == '\'') {
-        // Quoted interval literal
-        literal_start++; // Skip opening quote
-        (*s)++;
-        while (**s != '\'' && **s) {
-            (*s)++;
+    // Peek ahead past whitespace
+    while (isspace(*peek)) peek++;
+
+    if (*peek == '\'') {
+        // Quoted timestamp literal (e.g., TIMESTAMP '2020-01-01')
+        const char *literal_start = peek + 1; // Skip opening quote
+        peek++;
+        while (*peek != '\'' && *peek) {
+            peek++;
         }
-        const char *literal_end = *s;
-        if (**s == '\'') {
-            (*s)++; // Skip closing quote
+        const char *literal_end = peek;
+        if (*peek == '\'') {
+            peek++; // Skip closing quote
         } else {
-            sql_ctx_error(context, "Unterminated quoted interval literal");
+            sql_ctx_error(context, "Unterminated quoted timestamp literal");
             return;
         }
 
-        // Use aml_pool_strdupf to combine TIMESTAMP and the literal
         char *timestamp_token = aml_pool_strdupf(pool, "TIMESTAMP %.*s",
             (int)(literal_end - literal_start), literal_start);
 
         _sql_token_init(bh, pool, start, strlen(timestamp_token),
                         SQL_COMPOUND_LITERAL, timestamp_token);
+
+        *s = peek; // Update actual position safely
     } else {
-        // Unquoted timestamp (e.g., TIMESTAMP '2021-01-01 12:00:00')
-        const char *literal_end = *s;
-        while (isalnum(*literal_end) || *literal_end == '-' || *literal_end == ':' || *literal_end == ' ') {
-            literal_end++;
+        // Unquoted: It's just a column named "timestamp", NOT a compound literal
+        if (sql_ctx_is_reserved_keyword(context, "TIMESTAMP")) {
+            _sql_token_init(bh, pool, start, length, SQL_KEYWORD, NULL);
+        } else {
+            _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
         }
-
-        // Use aml_pool_strdupf to combine TIMESTAMP and the literal
-        char *timestamp_token = aml_pool_strdupf(pool, "TIMESTAMP %.*s",
-            (int)(literal_end - literal_start), literal_start);
-
-        _sql_token_init(bh, pool, start, strlen(timestamp_token),
-                        SQL_COMPOUND_LITERAL, timestamp_token);
-        *s = literal_end; // Update position
     }
 }
 
@@ -145,6 +140,11 @@ void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
 // Helper function to handle identifiers and keywords
 void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const char **s) {
     const char *start = *s;
+
+    while (isalnum(**s) || **s == '_' || **s == '.') {
+        (*s)++;
+    }
+
     while (isalnum(**s) || **s == '_') (*s)++;
     size_t length = *s - start;
     aml_pool_t *pool = context->pool;

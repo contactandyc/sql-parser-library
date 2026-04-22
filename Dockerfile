@@ -80,6 +80,22 @@ RUN set -eux; \
     ./build.sh install; \
     cd ..; \
     rm -rf "a-memory-library"
+# --- Build & install a-json-sax-library ---
+RUN set -eux; \
+    git clone --depth 1 --single-branch "https://github.com/contactandyc/a-json-sax-library.git" "a-json-sax-library"; \
+    cd "a-json-sax-library"; \
+    ./build.sh clean && \
+    ./build.sh install; \
+    cd ..; \
+    rm -rf "a-json-sax-library"
+# --- Build & install a-json-library ---
+RUN set -eux; \
+    git clone --depth 1 --single-branch "https://github.com/contactandyc/a-json-library.git" "a-json-library"; \
+    cd "a-json-library"; \
+    ./build.sh clean && \
+    ./build.sh install; \
+    cd ..; \
+    rm -rf "a-json-library"
 
 # --- Build & install this project --------------------------------------------
 COPY --chown=dev:dev . /workspace/sql-parser-library
