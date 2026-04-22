@@ -62,7 +62,6 @@ static sql_data_type_t infer_list_type(sql_ast_node_t *list) {
     return common_type;
 }
 
-
 static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *node) {
     switch (ast->data_type) {
         case SQL_TYPE_INT:
@@ -77,7 +76,6 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
             break;
         case SQL_TYPE_STRING:
             if (ast->type == SQL_COMPOUND_LITERAL && strncasecmp(ast->value, "INTERVAL", 8) == 0) {
-                // CRITICAL FIX: Gracefully strip 'INTERVAL ' and any quotes from literal
                 const char *val_ptr = ast->value + 8;
                 while (isspace(*val_ptr)) val_ptr++;
                 if (*val_ptr == '\'') val_ptr++;
@@ -103,7 +101,6 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
                 const char *val_ptr = ast->value;
                 char *clean_val = NULL;
 
-                // Strip prefix and quotes for the runtime epoch converter
                 if (ast->type == SQL_COMPOUND_LITERAL && strncasecmp(val_ptr, "TIMESTAMP", 9) == 0) {
                     val_ptr += 9;
                     while (isspace(*val_ptr)) val_ptr++;
@@ -140,6 +137,7 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     node->token_type = ast->type;
     node->token = (ast->type == SQL_LIST) ? NULL : aml_pool_strdup(pool, ast->value);
     node->type = ast->type;
+    node->column = ast->column;
     node->data_type = ast->data_type;
     node->spec = ast->spec;
 
@@ -186,12 +184,22 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
         node->parameters[0] = convert_ast_to_node(context, ast->left);
         node->data_type = SQL_TYPE_BOOL;
     } else if(ast->type == SQL_IDENTIFIER) {
-        for(size_t i = 0; i < context->column_count; i++) {
-            if(strcasecmp(context->columns[i].name, ast->value) == 0) {
-                node->data_type = context->columns[i].type;
-                node->func = context->columns[i].func;
-                break;
+        // --- NEW DYNAMIC FALLBACK LOGIC ---
+        if (ast->column) {
+            // SUCCESS! The Binder already resolved this. Just grab the function pointer.
+            node->func = ast->column->func;
+        } else if (context->schema_lookup) {
+            // Fallback: If the user bypassed the Binder and just ran a raw expression,
+            // query the dynamic catalog for the identifier (passing NULL for table name).
+            sql_ctx_column_t *col = context->schema_lookup(context, NULL, ast->value);
+            if (col) {
+                node->data_type = col->type;
+                node->func = col->func;
+            } else {
+                node->is_null = true;
             }
+        } else {
+            node->is_null = true;
         }
     } else {
         size_t num_parameters = 0;

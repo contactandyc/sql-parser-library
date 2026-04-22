@@ -15,15 +15,6 @@ static inline bool is_context_error(sql_ctx_t *context) {
     return context->errors;
 }
 
-sql_ctx_column_t *get_column(const char *column_name, sql_ctx_t *context) {
-    for (size_t i = 0; i < context->column_count; i++) {
-        if (strcasecmp(context->columns[i].name, column_name) == 0) {
-            return context->columns+i;
-        }
-    }
-    return NULL;
-}
-
 sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
     sql_ast_node_t *node = (sql_ast_node_t *)aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
     node->type = token->type;
@@ -35,16 +26,15 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
 
     switch (token->type) {
         case SQL_IDENTIFIER: {
-            sql_ctx_column_t *column = get_column(token->token, context);
-            if (!column) {
-                if (!strcasecmp(token->token, "TRUE") || !strcasecmp(token->token, "FALSE")) {
-                    node->type = SQL_LITERAL;
-                    node->data_type = SQL_TYPE_BOOL;
-                } else {
-                    sql_ctx_warning(context, "Unknown column '%s'", token->token);
-                }
+            // Check for booleans first
+            if (!strcasecmp(token->token, "TRUE") || !strcasecmp(token->token, "FALSE")) {
+                node->type = SQL_LITERAL;
+                node->data_type = SQL_TYPE_BOOL;
             } else {
-                node->data_type = column->type;
+                // It's a raw identifier. We do NOT know what data type it is yet,
+                // and we do NOT link the column. The Binder will do this later.
+                node->data_type = SQL_TYPE_UNKNOWN;
+                node->column = NULL;
             }
             break;
         }

@@ -22,3 +22,7 @@ examples:
     targets:
       parse_sql:
         - src/main.c
+  example_table:
+    targets:
+      example_table:
+        - src/main.c

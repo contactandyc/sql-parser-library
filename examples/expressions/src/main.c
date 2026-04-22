@@ -19,6 +19,7 @@
 #include "sql-parser-library/sql_node.h"
 #include "sql-parser-library/sql_ast.h"
 #include "sql-parser-library/sql_tokenizer.h"
+#include "sql-parser-library/sql_binder.h" // NEW: Added Binder
 #include "sql-parser-library/date_utils.h"
 
 #define MAX_PATH_LEN 1024
@@ -43,19 +44,29 @@ static aml_pool_t *g_pool = NULL;
 //--------------------------------------------------------------
 static sql_node_t *my_col_getter(sql_ctx_t *ctx, sql_node_t *f)
 {
-    ajson_t *row_obj = (ajson_t *)ctx->row;
-    const char *col_name = f->token;
+    ajson_t **row_objs = (ajson_t **)ctx->row;
+
+    sql_ctx_column_t *col_def = f->column;
+    if (!col_def || !row_objs) {
+        return sql_bool_init(ctx, false, true); // Fallback to NULL if unmapped
+    }
+
+    ajson_t *row_obj = row_objs[col_def->table_index];
+    if (!row_obj) {
+        return sql_bool_init(ctx, false, true); // NULL
+    }
+
+    const char *col_name = col_def->name;
 
     ajson_t *valnode = ajsono_get(row_obj, col_name);
     bool is_null = false;
 
-    // Verify if the node is missing, errors out, or isn't a native data type
     if (!valnode || ajson_is_error(valnode)) {
         is_null = true;
     } else {
         ajson_type_t t = ajson_type(valnode);
         if (t != string && t != number && t != decimal && t != bool_true && t != bool_false) {
-            is_null = true; // Treats JSON `null`, arrays, or objects as SQL NULL
+            is_null = true;
         }
     }
 
@@ -98,6 +109,23 @@ static sql_node_t *my_col_getter(sql_ctx_t *ctx, sql_node_t *f)
     }
 }
 
+// --- NEW: DYNAMIC CATALOG CALLBACK ---
+static sql_ctx_column_t *expression_catalog_lookup(sql_ctx_t *ctx, const char *table_name, const char *column_name) {
+    my_table_t *table = (my_table_t *)ctx->catalog_state;
+    if (!table) return NULL;
+
+    for (size_t i = 0; i < table->num_columns; i++) {
+        if (strcasecmp(table->columns[i].name, column_name) == 0) {
+            if (table_name && table->table_name && strcasecmp(table->table_name, table_name) != 0) {
+                continue; // Table name mismatch
+            }
+            return &table->columns[i];
+        }
+    }
+    return NULL;
+}
+
+
 //--------------------------------------------------------------
 // Parse table definition object: columns, and a "rows" array
 //--------------------------------------------------------------
@@ -112,10 +140,8 @@ static my_table_t *parse_table_object(ajson_t *table_obj)
 
     table->table_name = ajsono_scan_strd(g_pool, table_obj, "name", "my_table");
 
-    // parse columns array (optional if you want typed references)
     ajson_t *cols = ajsono_get(table_obj, "columns");
     if (!cols || ajson_is_error(cols) || ajson_type(cols) != array) {
-        // We can handle no columns, or treat as 0
         printf("No 'columns' array or invalid, treating as 0 columns.\n");
         table->columns = NULL;
         table->num_columns = 0;
@@ -145,13 +171,15 @@ static my_table_t *parse_table_object(ajson_t *table_obj)
                 else if (strcasecmp(typestr, "BOOL") == 0)
                     ctype = SQL_TYPE_BOOL;
             }
+
+            table->columns[i].table_name = table->table_name;
             table->columns[i].name = (char *)name;
             table->columns[i].type = ctype;
             table->columns[i].func = my_col_getter;
+            table->columns[i].table_index = 0;
         }
     }
 
-    // parse rows as an array of JSON objects
     ajson_t *rows_array = ajsono_get(table_obj, "rows");
     if (!rows_array || ajson_is_error(rows_array) || ajson_type(rows_array) != array) {
         printf("No valid 'rows' array, treating as zero rows.\n");
@@ -169,7 +197,6 @@ static my_table_t *parse_table_object(ajson_t *table_obj)
         ajson_t *rowobj = ajsona_scan(rows_array, (int)r);
         if (!rowobj || ajson_is_error(rowobj) || ajson_type(rowobj) != object) {
             printf("Row %zu is not a valid object.\n", r);
-            // partial parse
             table->rows[r] = NULL;
         } else {
             table->rows[r] = rowobj;
@@ -182,14 +209,15 @@ static my_table_t *parse_table_object(ajson_t *table_obj)
 static void debug_one_query(my_table_t *table, const char *sql,
                             char **expected_ids, size_t num_expected)
 {
-    // Build sql_ctx_t
     sql_ctx_t *ctx = aml_pool_zalloc(g_pool, sizeof(sql_ctx_t));
     ctx->pool = g_pool;
-    ctx->columns = table->columns;
-    ctx->column_count = table->num_columns;
+
+    // --- WIRE UP THE DYNAMIC CATALOG ---
+    ctx->schema_lookup = expression_catalog_lookup;
+    ctx->catalog_state = table;
+
     register_ctx(ctx);
 
-    // tokenize and parse
     size_t token_count = 0;
     sql_token_t **tokens = sql_tokenize(ctx, sql, &token_count);
     if (!tokens) {
@@ -205,6 +233,9 @@ static void debug_one_query(my_table_t *table, const char *sql,
 
     sql_node_t *expr_node = NULL;
     if (ast) {
+        // --- BIND BEFORE COMPILING ---
+        sql_bind_expression(ctx, ast);
+
         print_ast(ast, 0);
         expr_node = convert_ast_to_node(ctx, ast);
         print_node(ctx, expr_node, 0);
@@ -216,7 +247,6 @@ static void debug_one_query(my_table_t *table, const char *sql,
         print_node(ctx, expr_node, 0);
     }
 
-    // We'll find the "id" column name if we want to compare row IDs
     int id_col_index = -1;
     for (size_t i = 0; i < table->num_columns; i++) {
         if (strcasecmp(table->columns[i].name, "id") == 0) {
@@ -225,17 +255,17 @@ static void debug_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // Gather actual matched IDs in a temporary array
     char **actual_ids = aml_pool_alloc(ctx->pool, table->num_rows * sizeof(char*));
     size_t actual_count = 0;
 
-    // Evaluate row by row
+    ajson_t *current_row_set[1];
+
     for (size_t r = 0; r < table->num_rows; r++) {
         ajson_t *row_obj = table->rows[r];
-        if (!row_obj) continue; // skip invalid
+        if (!row_obj) continue;
 
-        // set context->row to the JSON object
-        ctx->row = row_obj;
+        current_row_set[0] = row_obj;
+        ctx->row = current_row_set;
 
         bool matched = true;
         if (expr_node) {
@@ -245,25 +275,20 @@ static void debug_one_query(my_table_t *table, const char *sql,
             }
         }
         if (matched) {
-            // If we want to gather the row's "id" field:
             if (id_col_index >= 0) {
-                // Instead of reading row->values, we do a dynamic JSON lookup:
                 const char *col_name = table->columns[id_col_index].name;
                 ajson_t *valnode = ajsono_get(row_obj, col_name);
                 if (valnode && ajson_type(valnode) == string) {
                     actual_ids[actual_count++] = (char*)ajson_to_strd(ctx->pool, valnode, "");
                 } else if (valnode && (ajson_type(valnode) == number || ajson_type(valnode) == decimal)) {
-                    // convert number to string
                     double d = ajson_to_double(valnode, 0.0);
                     char tmp[64];
                     snprintf(tmp, sizeof(tmp), "%.0f", d);
                     actual_ids[actual_count++] = aml_pool_strdup(ctx->pool, tmp);
                 } else {
-                    // fallback
                     actual_ids[actual_count++] = (char*)"";
                 }
             } else {
-                // no "id" column -> label them "ROW-x"
                 char tmp[32];
                 snprintf(tmp, sizeof(tmp), "ROW-%zu", r);
                 actual_ids[actual_count++] = aml_pool_strdup(ctx->pool, tmp);
@@ -271,7 +296,6 @@ static void debug_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // Compare actual vs. expected
     bool mismatch = false;
     if (actual_count != num_expected) {
         mismatch = true;
@@ -291,7 +315,6 @@ static void debug_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // print results
     printf("\nExpected %zu => ", num_expected);
     for (size_t i = 0; i < num_expected; i++) {
         printf("%s ", expected_ids[i]);
@@ -303,23 +326,20 @@ static void debug_one_query(my_table_t *table, const char *sql,
     printf("\n\n");
 }
 
-
-//--------------------------------------------------------------
-// Evaluate a single expression, gather matching "id" column, compare
-//--------------------------------------------------------------
 static void run_one_query(my_table_t *table, const char *sql,
                           char **expected_ids, size_t num_expected, bool detailed)
 {
-    // Build sql_ctx_t
     sql_ctx_t *ctx = aml_pool_zalloc(g_pool, sizeof(sql_ctx_t));
     ctx->pool = g_pool;
-    ctx->columns = table->columns;
-    ctx->column_count = table->num_columns;
+
+    // --- WIRE UP THE DYNAMIC CATALOG ---
+    ctx->schema_lookup = expression_catalog_lookup;
+    ctx->catalog_state = table;
+
     register_ctx(ctx);
 
     printf("%s", sql);
 
-    // tokenize and parse
     size_t token_count = 0;
     sql_token_t **tokens = sql_tokenize(ctx, sql, &token_count);
     if (!tokens) {
@@ -334,13 +354,15 @@ static void run_one_query(my_table_t *table, const char *sql,
 
     sql_node_t *expr_node = NULL;
     if (ast) {
+        // --- BIND BEFORE COMPILING ---
+        sql_bind_expression(ctx, ast);
+
         expr_node = convert_ast_to_node(ctx, ast);
         apply_type_conversions(ctx, expr_node);
         simplify_func_tree(ctx, expr_node);
         simplify_logical_expressions(expr_node);
     }
 
-    // We'll find the "id" column name if we want to compare row IDs
     int id_col_index = -1;
     for (size_t i = 0; i < table->num_columns; i++) {
         if (strcasecmp(table->columns[i].name, "id") == 0) {
@@ -349,17 +371,17 @@ static void run_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // Gather actual matched IDs in a temporary array
     char **actual_ids = aml_pool_alloc(ctx->pool, table->num_rows * sizeof(char*));
     size_t actual_count = 0;
 
-    // Evaluate row by row
+    ajson_t *current_row_set[1];
+
     for (size_t r = 0; r < table->num_rows; r++) {
         ajson_t *row_obj = table->rows[r];
-        if (!row_obj) continue; // skip invalid
+        if (!row_obj) continue;
 
-        // set context->row to the JSON object
-        ctx->row = row_obj;
+        current_row_set[0] = row_obj;
+        ctx->row = current_row_set;
 
         bool matched = true;
         if (expr_node) {
@@ -369,24 +391,20 @@ static void run_one_query(my_table_t *table, const char *sql,
             }
         }
         if (matched) {
-            // If we want to gather the row's "id" field:
             if (id_col_index >= 0) {
                 const char *col_name = table->columns[id_col_index].name;
                 ajson_t *valnode = ajsono_get(row_obj, col_name);
                 if (valnode && ajson_type(valnode) == string) {
                     actual_ids[actual_count++] = (char*)ajson_to_strd(ctx->pool, valnode, "");
                 } else if (valnode && (ajson_type(valnode) == number || ajson_type(valnode) == decimal)) {
-                    // convert number to string
                     double d = ajson_to_double(valnode, 0.0);
                     char tmp[64];
                     snprintf(tmp, sizeof(tmp), "%.0f", d);
                     actual_ids[actual_count++] = aml_pool_strdup(ctx->pool, tmp);
                 } else {
-                    // fallback
                     actual_ids[actual_count++] = (char*)"";
                 }
             } else {
-                // no "id" column -> label them "ROW-x"
                 char tmp[32];
                 snprintf(tmp, sizeof(tmp), "ROW-%zu", r);
                 actual_ids[actual_count++] = aml_pool_strdup(ctx->pool, tmp);
@@ -394,7 +412,6 @@ static void run_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // Compare actual vs. expected
     bool mismatch = false;
     if (actual_count != num_expected) {
         mismatch = true;
@@ -414,15 +431,12 @@ static void run_one_query(my_table_t *table, const char *sql,
         }
     }
 
-    // print results
     if(mismatch) {
         printf(" => FAILED\n");
-        if (detailed)
-            debug_one_query(table, sql, expected_ids, num_expected);
+        if (detailed) debug_one_query(table, sql, expected_ids, num_expected);
     } else {
         printf(" => OK\n");
-        if (detailed)
-            debug_one_query(table, sql, expected_ids, num_expected);
+        if (detailed) debug_one_query(table, sql, expected_ids, num_expected);
     }
 }
 
@@ -455,7 +469,6 @@ static void run_all_queries(my_table_t *table, ajson_t *queries_array, int argc,
         if(found)
             continue;
 
-        // parse the "expected" array
         ajson_t *exp = ajsono_get(qobj, "expected");
         size_t nexp = 0;
         char **expected_list = NULL;
@@ -472,7 +485,6 @@ static void run_all_queries(my_table_t *table, ajson_t *queries_array, int argc,
                     }
                 }
             } else if (ajson_type(exp) == string) {
-                // single string means 1 expected ID
                 nexp = 1;
                 expected_list = aml_pool_alloc(g_pool, sizeof(char*));
                 expected_list[0] = ajson_to_strd(g_pool, exp, "");
@@ -504,10 +516,8 @@ int main(int argc, char **argv)
     }
 
     if (S_ISDIR(path_stat.st_mode)) {
-        // If it's a directory, process all JSON files inside
         process_directory(argv[1], argc, argv);
     } else {
-        // Otherwise, process a single file
         process_json_file(argv[1], argc, argv);
     }
 
@@ -529,7 +539,6 @@ static void process_directory(const char *dir_path, int argc, char **argv)
     char path[MAX_PATH_LEN];
 
     while ((entry = readdir(dir)) != NULL) {
-        // Skip "." and ".."
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -543,10 +552,8 @@ static void process_directory(const char *dir_path, int argc, char **argv)
         }
 
         if (S_ISDIR(path_stat.st_mode)) {
-            // Recursively process subdirectories
             process_directory(path, argc, argv);
         } else if (S_ISREG(path_stat.st_mode) && strstr(entry->d_name, ".json")) {
-            // Process only JSON files
             printf("\nProcessing JSON file: %s\n", path);
             process_json_file(path, argc, argv);
         }

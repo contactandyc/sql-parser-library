@@ -58,6 +58,9 @@ typedef struct sql_node_s sql_node_t;
 struct sql_ctx_s;
 struct sql_ctx_spec_s;
 
+struct sql_ctx_column_s;
+typedef struct sql_ctx_column_s sql_ctx_column_t;
+
 // callback function to resolve a row
 typedef sql_node_t * (*sql_node_cb)(struct sql_ctx_s *ctx, sql_node_t *f);
 
@@ -69,6 +72,7 @@ struct sql_node_s {
     sql_node_cb func;      // Function pointer to evaluate the node (if applicable)
     sql_data_type_t data_type;  // Data type of the node
     struct sql_ctx_spec_s *spec;  // Function specification (if applicable)
+    sql_ctx_column_t *column;
     bool is_null;
     union {
         bool bool_value;

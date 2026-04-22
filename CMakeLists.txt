@@ -85,9 +85,11 @@ add_library(sql_parser_library_debug STATIC
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
   src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
@@ -156,9 +158,11 @@ add_library(sql_parser_library_memory STATIC
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
   src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
@@ -230,9 +234,11 @@ add_library(sql_parser_library_static STATIC
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
   src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
@@ -301,9 +307,11 @@ add_library(sql_parser_library_shared SHARED
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
   src/sql_query.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
@@ -417,4 +425,5 @@ install(FILES
 # Dynamically mount all subprojects (apps, examples, tests, etc.)
 # # add_subdirectory(examples/expressions)
 # # add_subdirectory(examples/parse_sql)
+# # add_subdirectory(examples/example_table)
 # 

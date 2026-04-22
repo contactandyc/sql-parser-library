@@ -28,6 +28,14 @@ typedef struct sql_ctx_spec_update_s sql_ctx_spec_update_t;
 struct sql_ctx_message_s;
 typedef struct sql_ctx_message_s sql_ctx_message_t;
 
+// --- DYNAMIC CATALOG CALLBACK ---
+// Defines the callback signature for dynamic schema resolution
+typedef sql_ctx_column_t* (*sql_schema_lookup_cb)(
+    sql_ctx_t *ctx,
+    const char *table_name,
+    const char *column_name
+);
+
 // message related functions (used for errors and warnings)
 void sql_ctx_error(sql_ctx_t *ctx, const char *format, ...);
 void sql_ctx_warning(sql_ctx_t *ctx, const char *format, ...);
@@ -53,8 +61,10 @@ sql_ctx_spec_t *sql_ctx_get_spec(sql_ctx_t *ctx, const char *name);
 // this must be zeroed out before first use
 struct sql_ctx_s {
     aml_pool_t *pool;
-    sql_ctx_column_t *columns;
-    size_t column_count;
+
+    // --- NEW DYNAMIC CATALOG CONFIG ---
+    sql_schema_lookup_cb schema_lookup;
+    void *catalog_state; // Opaque pointer for your application to store DB connections, JSON configs, etc.
 
     int time_zone_offset;
 
@@ -77,7 +87,9 @@ struct sql_ctx_s {
 struct sql_ctx_column_s {
     char *name;           // Column name
     sql_data_type_t type; // Column type (e.g., SQL_TYPE_INT, SQL_TYPE_STRING)
-    sql_node_cb func; // Function pointer to extract column value
+    sql_node_cb func;     // Function pointer to extract column value
+    char *table_name;
+    int table_index;
 };
 
 // all fields must be set (even if same as input)

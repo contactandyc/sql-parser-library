@@ -14,9 +14,11 @@
 typedef struct sql_ast_node_s {
     sql_token_type_t type;
     char *value;
+    char *alias;
     sql_data_type_t data_type;
     sql_ctx_spec_t *spec;     // Top level function specification (if applicable)
-    char *alias;
+    sql_ctx_column_t *column;
+
     struct sql_ast_node_s *left;   // Left child (for binary operators)
     struct sql_ast_node_s *right;  // Right child (for binary operators)
     struct sql_ast_node_s *next;   // Next sibling (if needed)
