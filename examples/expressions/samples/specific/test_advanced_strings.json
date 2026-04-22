@@ -1,0 +1,36 @@
+{
+  "table": {
+    "name": "contacts",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "email", "type": "STRING" },
+      { "name": "full_name", "type": "STRING" }
+    ],
+    "rows": [
+      { "id": "1", "email": "alice@gmail.com", "full_name": "Alice Smith" },
+      { "id": "2", "email": "bob@yahoo.com", "full_name": "Bob Jones" }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "REPLACE(email, 'gmail.com', 'test.com') = 'alice@test.com'",
+      "expected": ["1"],
+      "explanation": "Validates substring replacement."
+    },
+    {
+      "sql": "SPLIT_PART(full_name, ' ', 1) = 'Alice'",
+      "expected": ["1"],
+      "explanation": "Validates extracting the 1st part of a delimited string."
+    },
+    {
+      "sql": "POSITION('@' IN email) = 6",
+      "expected": ["1"],
+      "explanation": "Validates standard SQL 1-indexed substring position finding."
+    },
+    {
+      "sql": "REGEXP_LIKE(email, '^.*@gmail\\.com$')",
+      "expected": ["1"],
+      "explanation": "Validates Regex pattern matching."
+    }
+  ]
+}

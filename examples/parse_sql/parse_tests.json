@@ -171,6 +171,62 @@
     {
       "sql": "SELECT * FROM pagination LIMIT 100 / 10 OFFSET 5 * 2",
       "expected": "SELECT * FROM pagination LIMIT (100 / 10) OFFSET (5 * 2)"
+    },
+    {
+      "sql": "SELECT CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END AS age_group FROM users",
+      "expected": "SELECT CASE WHEN (18 < age) THEN 'adult' ELSE 'minor' END AS age_group FROM users"
+    },
+    {
+      "sql": "SELECT CASE WHEN score >= 90 THEN 'A' WHEN score >= 80 THEN 'B' ELSE 'F' END FROM grades",
+      "expected": "SELECT CASE WHEN (90 <= score) THEN 'A' WHEN (80 <= score) THEN 'B' ELSE 'F' END FROM grades"
+    },
+    {
+      "sql": "SELECT id % 10 AS cohort FROM users",
+      "expected": "SELECT (id % 10) AS cohort FROM users"
+    },
+    {
+      "sql": "SELECT base ^ 2 AS squared FROM math",
+      "expected": "SELECT (base ^ 2) AS squared FROM math"
+    },
+    {
+      "sql": "SELECT * FROM users WHERE REGEXP_LIKE(email, '^.*@gmail\\.com$')",
+      "expected": "SELECT * FROM users WHERE REGEXP_LIKE(email, '^.*@gmail\\.com$')"
+    },
+    {
+      "sql": "SELECT * FROM users WHERE email ~ '^.*@gmail\\.com$'",
+      "expected": "SELECT * FROM users WHERE (email ~ '^.*@gmail\\.com$')"
+    },
+    {
+      "sql": "SELECT REPLACE(name, 'foo', 'bar') AS clean_name FROM t",
+      "expected": "SELECT REPLACE(name, 'foo', 'bar') AS clean_name FROM t"
+    },
+    {
+      "sql": "SELECT POSITION('@' IN email) AS domain_start FROM users",
+      "expected": "SELECT POSITION('@' IN email) AS domain_start FROM users"
+    },
+    {
+      "sql": "SELECT SPLIT_PART(full_name, ' ', 1) AS first_name FROM users",
+      "expected": "SELECT SPLIT_PART(full_name, ' ', 1) AS first_name FROM users"
+    },
+    {
+      "sql": "SELECT total / NULLIF(count, 0) AS average FROM stats",
+      "expected": "SELECT (total / NULLIF(count, 0)) AS average FROM stats"
+    },
+    {
+      "sql": "SELECT metadata->>'browser' AS browser FROM logs",
+      "expected": "SELECT (metadata ->> 'browser') AS browser FROM logs"
+    },
+    {
+      "sql": "SELECT JSON_EXTRACT(metadata, '$.browser') FROM logs",
+      "expected": "SELECT JSON_EXTRACT(metadata, '$.browser') FROM logs"
+    },
+    {
+      "sql": "SELECT * FROM users WHERE permissions & 4 > 0",
+      "expected": "SELECT * FROM users WHERE (0 < (permissions & 4))"
+    },
+    {
+      "sql": "SELECT flags | 1 AS new_flags FROM system",
+      "expected": "SELECT (flags | 1) AS new_flags FROM system"
     }
   ]
 }

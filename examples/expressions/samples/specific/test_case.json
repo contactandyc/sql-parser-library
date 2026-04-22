@@ -1,0 +1,27 @@
+{
+  "table": {
+    "name": "users",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "age", "type": "INT" },
+      { "name": "score", "type": "INT" }
+    ],
+    "rows": [
+      { "id": "1", "age": 15, "score": 95 },
+      { "id": "2", "age": 20, "score": 85 },
+      { "id": "3", "age": 30, "score": 50 }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "CASE WHEN age > 18 THEN 'adult' ELSE 'minor' END = 'adult'",
+      "expected": ["2", "3"],
+      "explanation": "Evaluates a basic CASE statement branching on age."
+    },
+    {
+      "sql": "CASE WHEN score >= 90 THEN 'A' WHEN score >= 80 THEN 'B' ELSE 'F' END = 'A'",
+      "expected": ["1"],
+      "explanation": "Evaluates a multi-branch CASE statement."
+    }
+  ]
+}

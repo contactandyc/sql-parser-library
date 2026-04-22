@@ -89,25 +89,88 @@ sql_ast_node_t *parse_expression(sql_ctx_t *context, sql_token_t **tokens, size_
 sql_ast_node_t *parse_and_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+
+// New Precedence Hierarchy
+sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 
 sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
+sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+
 
 /* ------------------------------------------------------------------
- * Arithmetic Expressions
+ * Arithmetic & Bitwise Expressions
  * ------------------------------------------------------------------ */
+
+sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_bitwise_and(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR && tokens[*pos]->token[0] == '|' && tokens[*pos]->token[1] == '\0') {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        operator_node->right = parse_bitwise_and(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
+}
+
+sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_bitwise_shift(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR && tokens[*pos]->token[0] == '&' && tokens[*pos]->token[1] == '\0') {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        operator_node->right = parse_bitwise_shift(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
+}
+
+sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR &&
+           ((tokens[*pos]->token[0] == '<' && tokens[*pos]->token[1] == '<') ||
+            (tokens[*pos]->token[0] == '>' && tokens[*pos]->token[1] == '>'))) {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        operator_node->right = parse_arithmetic_expression(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
+}
 
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_term(context, tokens, pos, end_pos);
     if (is_context_error(context))
         return NULL;
 
+    // CRITICAL FIX: Ensure the token is exactly "+" or "-", not "->>"
     while (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
-           (tokens[*pos]->token[0] == '+' || tokens[*pos]->token[0] == '-')) {
+           ((tokens[*pos]->token[0] == '+' && tokens[*pos]->token[1] == '\0') ||
+            (tokens[*pos]->token[0] == '-' && tokens[*pos]->token[1] == '\0'))) {
         sql_token_t *operator_token = tokens[(*pos)++];
         sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
         if (is_context_error(context)) return NULL;
@@ -123,18 +186,19 @@ sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **to
 
 
 sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
-    sql_ast_node_t *left = parse_factor(context, tokens, pos, end_pos);
+    sql_ast_node_t *left = parse_exponent(context, tokens, pos, end_pos);
     if (is_context_error(context))
         return NULL;
 
+    // Added modulo (%) to multiplicative precedence
     while (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
-           (tokens[*pos]->token[0] == '*' || tokens[*pos]->token[0] == '/')) {
+           (tokens[*pos]->token[0] == '*' || tokens[*pos]->token[0] == '/' || tokens[*pos]->token[0] == '%')) {
         sql_token_t *operator_token = tokens[(*pos)++];
         sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
         if (is_context_error(context))
             return NULL;
         operator_node->left = left;
-        operator_node->right = parse_factor(context, tokens, pos, end_pos);
+        operator_node->right = parse_exponent(context, tokens, pos, end_pos);
         if (is_context_error(context))
             return NULL;
         left = operator_node;
@@ -143,10 +207,31 @@ sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos
     return left;
 }
 
+sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_factor(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR && tokens[*pos]->token[0] == '^') {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        // Exponentiation is typically right-associative, but evaluating recursively handles standard left-to-right logic fine for SQL
+        operator_node->right = parse_factor(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
+}
+
+
 sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
-    // Handle unary +/- (Moved from parse_arithmetic_expression)
+    // CRITICAL FIX: Ensure unary operators are exactly 1 character long
     if (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
-        (tokens[*pos]->token[0] == '+' || tokens[*pos]->token[0] == '-')) {
+        ((tokens[*pos]->token[0] == '+' && tokens[*pos]->token[1] == '\0') ||
+         (tokens[*pos]->token[0] == '-' && tokens[*pos]->token[1] == '\0') ||
+         (tokens[*pos]->token[0] == '~' && tokens[*pos]->token[1] == '\0'))) {
         sql_token_t *unary_op = tokens[(*pos)++];
         sql_ast_node_t *node = create_ast_node(context, unary_op);
         if (is_context_error(context)) return NULL;
@@ -156,7 +241,26 @@ sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *p
         return node;
     }
 
-    return parse_primary(context, tokens, pos, end_pos);
+    return parse_json_accessor(context, tokens, pos, end_pos);
+}
+
+
+sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_primary(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR &&
+           strcmp(tokens[*pos]->token, "->>") == 0) {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        operator_node->right = parse_primary(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
 }
 
 /* ------------------------------------------------------------------
@@ -217,6 +321,51 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
     }
 
     sql_token_t *token = tokens[*pos];
+
+    if (token->type == SQL_KEYWORD && strcasecmp(token->token, "CASE") == 0) {
+        (*pos)++; // Consume CASE
+        sql_ast_node_t *case_node = create_ast_node(context, token);
+        case_node->type = SQL_FUNCTION; // Treat like a function node structurally
+        case_node->spec = sql_ctx_get_spec(context, "CASE");
+
+        sql_ast_node_t *head = NULL, *tail = NULL;
+
+        while (*pos < end_pos && strcasecmp(tokens[*pos]->token, "END") != 0) {
+            sql_ast_node_t *clause_node = NULL;
+            if (strcasecmp(tokens[*pos]->token, "WHEN") == 0) {
+                sql_token_t *when_token = tokens[(*pos)++];
+                clause_node = create_ast_node(context, when_token);
+                clause_node->left = parse_expression(context, tokens, pos, end_pos);
+                if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "THEN") == 0) {
+                    (*pos)++; // Consume THEN
+                    clause_node->right = parse_expression(context, tokens, pos, end_pos);
+                } else {
+                    sql_ctx_error(context, "Expected THEN after WHEN");
+                    return NULL;
+                }
+            } else if (strcasecmp(tokens[*pos]->token, "ELSE") == 0) {
+                sql_token_t *else_token = tokens[(*pos)++];
+                clause_node = create_ast_node(context, else_token);
+                clause_node->left = parse_expression(context, tokens, pos, end_pos);
+            } else {
+                sql_ctx_error(context, "Expected WHEN, ELSE, or END inside CASE");
+                return NULL;
+            }
+
+            if (!head) { head = tail = clause_node; }
+            else { tail->next = clause_node; tail = clause_node; }
+        }
+
+        if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "END") == 0) {
+            (*pos)++; // Consume END
+        } else {
+            sql_ctx_error(context, "Expected END to close CASE");
+            return NULL;
+        }
+
+        case_node->left = head;
+        return case_node;
+    }
 
     // Handle parenthesized expressions (at the "primary" level)
     if (token->type == SQL_OPEN_PAREN) {
@@ -324,6 +473,36 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             return func_node;
         }
 
+        // SPECIAL CASE: POSITION(substr IN str)
+        if (strcasecmp(func_name_token->token, "POSITION") == 0) {
+
+            // CRITICAL FIX: Use parse_bitwise_or so it STOPS when it hits the "IN" keyword
+            // instead of greedily consuming it as an array comparison operator!
+            sql_ast_node_t *substr_node = parse_bitwise_or(context, tokens, pos, end_pos);
+
+            if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "IN") == 0) {
+                (*pos)++; // Consume IN
+            } else {
+                sql_ctx_error(context, "Expected IN in POSITION function");
+                return NULL;
+            }
+
+            // The second argument can safely use full parse_expression because the closing ')' will halt it
+            sql_ast_node_t *str_node = parse_expression(context, tokens, pos, end_pos);
+
+            if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                (*pos)++; // Consume ')'
+            } else {
+                sql_ctx_error(context, "Expected closing parenthesis for POSITION");
+                return NULL;
+            }
+
+            // Link them together like standard function arguments (arg1 -> arg2)
+            substr_node->next = str_node;
+            func_node->left = substr_node;
+            return func_node;
+        }
+
         // Handle standard function arguments
         sql_ast_node_t *arg_list_head = NULL;
         sql_ast_node_t *arg_list_tail = NULL;
@@ -385,7 +564,7 @@ static sql_ast_node_t *parse_between(sql_ctx_t *context, sql_ast_node_t *left,
     between_node->left = left; // The column being checked
 
     // Parse lower bound
-    sql_ast_node_t *lower_bound = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    sql_ast_node_t *lower_bound = parse_bitwise_or(context, tokens, pos, end_pos);
     if (!lower_bound) {
         sql_ctx_error(context, "Expected lower bound after 'BETWEEN'");
         return NULL;
@@ -400,7 +579,7 @@ static sql_ast_node_t *parse_between(sql_ctx_t *context, sql_ast_node_t *left,
     }
 
     // Parse upper bound
-    sql_ast_node_t *upper_bound = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    sql_ast_node_t *upper_bound = parse_bitwise_or(context, tokens, pos, end_pos);
     if (!upper_bound) {
         sql_ctx_error(context, "Expected upper bound after 'AND' in BETWEEN");
         return NULL;
@@ -429,7 +608,7 @@ static sql_ast_node_t *parse_not_between(sql_ctx_t *context, sql_ast_node_t *lef
     not_between_node->data_type = SQL_TYPE_BOOL;
     not_between_node->left = left;
 
-    sql_ast_node_t *lower_bound = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    sql_ast_node_t *lower_bound = parse_bitwise_or(context, tokens, pos, end_pos);
     if (!lower_bound) {
         sql_ctx_error(context, "Expected lower bound after 'NOT BETWEEN'");
         return NULL;
@@ -442,7 +621,7 @@ static sql_ast_node_t *parse_not_between(sql_ctx_t *context, sql_ast_node_t *lef
         return NULL;
     }
 
-    sql_ast_node_t *upper_bound = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    sql_ast_node_t *upper_bound = parse_bitwise_or(context, tokens, pos, end_pos);
     if (!upper_bound) {
         sql_ctx_error(context, "Expected upper bound after 'AND' in NOT BETWEEN");
         return NULL;
@@ -553,8 +732,8 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
         }
     }
 
-    // Otherwise parse right-hand side
-    sql_ast_node_t *right = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    // Parse right-hand side using bitwise_or as the math entry point
+    sql_ast_node_t *right = parse_bitwise_or(context, tokens, pos, end_pos);
     if (is_context_error(context))
         return NULL;
 
@@ -620,8 +799,8 @@ static sql_ast_node_t *parse_not_comparison_expression(sql_ctx_t *context,
             not_node->data_type = SQL_TYPE_BOOL;
             not_node->left = left;
 
-            // e.g. parse right side as arithmetic or ( ) ...
-            not_node->right = parse_arithmetic_expression(context, tokens, pos, end_pos);
+            // Start standard math cascade
+            not_node->right = parse_bitwise_or(context, tokens, pos, end_pos);
             not_node->spec = sql_ctx_get_spec(context, combined_operator);
             if (is_context_error(context))
                 return NULL;
@@ -663,8 +842,8 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context,
                                  size_t *pos,
                                  size_t end_pos)
 {
-    // First parse the left-hand side as an arithmetic expression
-    sql_ast_node_t *left = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    // First parse the left-hand side as a bitwise/math expression (TOP of the math ladder)
+    sql_ast_node_t *left = parse_bitwise_or(context, tokens, pos, end_pos);
     if (is_context_error(context))
         return NULL;
 

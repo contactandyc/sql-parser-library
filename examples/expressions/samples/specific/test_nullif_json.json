@@ -1,0 +1,32 @@
+{
+  "table": {
+    "name": "event_logs",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "count1", "type": "INT" },
+      { "name": "count2", "type": "INT" },
+      { "name": "metadata", "type": "STRING" }
+    ],
+    "rows": [
+      { "id": "1", "count1": 10, "count2": 10, "metadata": "{\"browser\":\"Chrome\"}" },
+      { "id": "2", "count1": 20, "count2": 0, "metadata": "{\"browser\":\"Firefox\"}" }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "NULLIF(count1, count2) IS NULL",
+      "expected": ["1"],
+      "explanation": "NULLIF returns NULL when both arguments are equal (10 == 10)."
+    },
+    {
+      "sql": "JSON_EXTRACT(metadata, '$.browser') = 'Chrome'",
+      "expected": ["1"],
+      "explanation": "Validates basic JSON path extraction via function."
+    },
+    {
+      "sql": "metadata->>'browser' = 'Firefox'",
+      "expected": ["2"],
+      "explanation": "Validates JSON extraction via the Postgres-style ->> operator."
+    }
+  ]
+}

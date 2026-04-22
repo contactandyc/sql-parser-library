@@ -254,12 +254,18 @@ void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = *s;
     char ch = **s;
 
-    if ((**s == ':' && (*s)[1] == ':')) {
+    if (ch == '-' && (*s)[1] == '>' && (*s)[2] == '>') {
+        _sql_token_init(bh, pool, start, 3, SQL_OPERATOR, NULL);
+        *s += 3;
+    } if ((**s == ':' && (*s)[1] == ':')) {
         _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
         *s += 2;
     } else if (ch == '=' || ch == '>' || ch == '<' || ch == '!') {
         if(ch == '<' && (*s)[1] == '>') {
             _sql_token_init(bh, pool, start, 2, SQL_COMPARISON, "!=");
+            *s += 2;
+        } else if ((ch == '<' && (*s)[1] == '<') || (ch == '>' && (*s)[1] == '>')) {
+            _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
             *s += 2;
         } else if ((*s)[1] == '=') { // okay because *s[0] is one of =, >, <, !
             _sql_token_init(bh, pool, start, 2, SQL_COMPARISON, NULL);
@@ -358,6 +364,7 @@ sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_coun
         } else {
             switch (*s) {
                 case '=': case '>': case '<': case '!': case '*': case '/': case ':':
+                case '%': case '^': case '&': case '|': case '~':
                     handle_operator(bh, pool, &s);
                     break;
 

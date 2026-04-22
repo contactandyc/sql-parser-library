@@ -11,10 +11,9 @@ base_templates:
 depends_on:
   - https://github.com/contactandyc/a-memory-library.git
   - https://github.com/contactandyc/the-macro-library.git
+  - https://github.com/contactandyc/a-json-library.git
 
 examples:
-  depends_on:
-    - https://github.com/contactandyc/a-json-library.git
   expressions:
     targets:
       expressions:

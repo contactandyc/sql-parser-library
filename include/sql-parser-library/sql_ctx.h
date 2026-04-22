@@ -133,6 +133,14 @@ void sql_register_trim(sql_ctx_t *ctx);
 
 void sql_register_geo(sql_ctx_t *ctx);
 
+void sql_register_nullif(sql_ctx_t *ctx);
+void sql_register_string_ext(sql_ctx_t *ctx);
+void sql_register_arithmetic_ext(sql_ctx_t *ctx);
+
+void sql_register_case(sql_ctx_t *ctx);
+void sql_register_regex(sql_ctx_t *ctx);
+void sql_register_json(sql_ctx_t *ctx);
+
 bool is_valid_extract(const char *value);
 
 
@@ -163,6 +171,12 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_sum(ctx);
     sql_register_trim(ctx);
     sql_register_geo(ctx);
+    sql_register_nullif(ctx);
+    sql_register_string_ext(ctx);
+    sql_register_arithmetic_ext(ctx);
+    sql_register_case(ctx);
+    sql_register_regex(ctx);
+    sql_register_json(ctx);
 }
 
 sql_node_t *sql_eval(sql_ctx_t *ctx, sql_node_t *f);

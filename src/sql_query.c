@@ -461,10 +461,31 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
         }
 
         case SQL_FUNCTION: {
+            if (strcasecmp(node->value, "CASE") == 0) {
+                char *res = aml_pool_strdup(ctx->pool, "CASE");
+                sql_ast_node_t *curr = node->left;
+                while (curr) {
+                    if (strcasecmp(curr->value, "WHEN") == 0) {
+                        char *cond = ast_to_string(ctx, curr->left);
+                        char *val = ast_to_string(ctx, curr->right);
+                        res = aml_pool_strdupf(ctx->pool, "%s WHEN %s THEN %s", res, cond, val);
+                    } else if (strcasecmp(curr->value, "ELSE") == 0) {
+                        char *val = ast_to_string(ctx, curr->left);
+                        res = aml_pool_strdupf(ctx->pool, "%s ELSE %s", res, val);
+                    }
+                    curr = curr->next;
+                }
+                return aml_pool_strdupf(ctx->pool, "%s END", res);
+            }
             if (node->left && node->left->type == SQL_KEYWORD && strcasecmp(node->left->value, "FROM") == 0) {
                 char *field = node->left->left->value;
                 char *source = ast_to_string(ctx, node->left->right);
                 return aml_pool_strdupf(ctx->pool, "EXTRACT(%s FROM %s)", field, source);
+            }
+            if (strcasecmp(node->value, "POSITION") == 0 && node->left && node->left->next) {
+                char *substr = ast_to_string(ctx, node->left);
+                char *str = ast_to_string(ctx, node->left->next);
+                return aml_pool_strdupf(ctx->pool, "POSITION(%s IN %s)", substr, str);
             }
             char *args = ast_list_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
