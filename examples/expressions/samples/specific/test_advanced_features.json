@@ -1,0 +1,34 @@
+{
+  "table": {
+    "name": "advanced_tests",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "val1", "type": "INT" },
+      { "name": "val2", "type": "INT" },
+      { "name": "greeting", "type": "STRING" }
+    ],
+    "rows": [
+      { "id": "1", "val1": null, "val2": null, "greeting": "Hello" },
+      { "id": "2", "val1": 10, "val2": null, "greeting": "Bonjour" },
+      { "id": "3", "val1": 10, "val2": 10, "greeting": "Hola" }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "val1 IS NOT DISTINCT FROM val2",
+      "expected": ["1", "3"]
+    },
+    {
+      "sql": "val1 IS DISTINCT FROM val2",
+      "expected": ["2"]
+    },
+    {
+      "sql": "greeting || ' World' = 'Hello World'",
+      "expected": ["1"]
+    },
+    {
+      "sql": "CAST(val1 AS DOUBLE) = 10.0",
+      "expected": ["2", "3"]
+    }
+  ]
+}

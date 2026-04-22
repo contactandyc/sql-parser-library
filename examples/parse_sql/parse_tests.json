@@ -227,6 +227,22 @@
     {
       "sql": "SELECT flags | 1 AS new_flags FROM system",
       "expected": "SELECT (flags | 1) AS new_flags FROM system"
+    },
+    {
+      "sql": "SELECT first_name || ' ' || last_name AS full_name FROM users",
+      "expected": "SELECT ((first_name || ' ') || last_name) AS full_name FROM users"
+    },
+    {
+      "sql": "SELECT CAST(age AS DOUBLE) FROM users",
+      "expected": "SELECT CAST(age AS DOUBLE) FROM users"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE val1 IS DISTINCT FROM val2",
+      "expected": "SELECT * FROM t WHERE (val1 IS DISTINCT FROM val2)"
+    },
+    {
+      "sql": "SELECT * FROM t WHERE val1 IS NOT DISTINCT FROM val2",
+      "expected": "SELECT * FROM t WHERE (val1 IS NOT DISTINCT FROM val2)"
     }
   ]
 }

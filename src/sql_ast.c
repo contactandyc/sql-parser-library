@@ -21,7 +21,7 @@ sql_ctx_column_t *get_column(const char *column_name, sql_ctx_t *context) {
             return context->columns+i;
         }
     }
-    return NULL; // Column not found
+    return NULL;
 }
 
 sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
@@ -33,7 +33,6 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
     node->right = NULL;
     node->next = NULL;
 
-    // Set the data type based on the token type
     switch (token->type) {
         case SQL_IDENTIFIER: {
             sql_ctx_column_t *column = get_column(token->token, context);
@@ -60,7 +59,6 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
             if (!strncasecmp(token->token, "TIMESTAMP", 9)) {
                 time_t epoch = 0;
 
-                // CRITICAL FIX: Strip the quotes just for validation
                 const char *val_ptr = token->token + 9;
                 while (isspace(*val_ptr)) val_ptr++;
                 if (*val_ptr == '\'') val_ptr++;
@@ -70,7 +68,6 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
                     clean_val[strlen(clean_val)-1] = '\0';
                 }
 
-                // Validate using the clean, unquoted string
                 if (convert_string_to_datetime(&epoch, context->pool, clean_val)) {
                     node->data_type = SQL_TYPE_DATETIME;
                 } else {
@@ -107,6 +104,7 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_
 sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
@@ -157,12 +155,30 @@ sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size
 }
 
 sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
-    sql_ast_node_t *left = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    sql_ast_node_t *left = parse_concatenation(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
     while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR &&
            ((tokens[*pos]->token[0] == '<' && tokens[*pos]->token[1] == '<') ||
             (tokens[*pos]->token[0] == '>' && tokens[*pos]->token[1] == '>'))) {
+        sql_token_t *operator_token = tokens[(*pos)++];
+        sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
+        if (is_context_error(context)) return NULL;
+
+        operator_node->left = left;
+        operator_node->right = parse_concatenation(context, tokens, pos, end_pos);
+        if (is_context_error(context)) return NULL;
+        left = operator_node;
+    }
+    return left;
+}
+
+sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+    sql_ast_node_t *left = parse_arithmetic_expression(context, tokens, pos, end_pos);
+    if (is_context_error(context)) return NULL;
+
+    while (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR &&
+           tokens[*pos]->token[0] == '|' && tokens[*pos]->token[1] == '|') {
         sql_token_t *operator_token = tokens[(*pos)++];
         sql_ast_node_t *operator_node = create_ast_node(context, operator_token);
         if (is_context_error(context)) return NULL;
@@ -177,8 +193,7 @@ sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, si
 
 sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_term(context, tokens, pos, end_pos);
-    if (is_context_error(context))
-        return NULL;
+    if (is_context_error(context)) return NULL;
 
     while (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
            ((tokens[*pos]->token[0] == '+' && tokens[*pos]->token[1] == '\0') ||
@@ -198,8 +213,7 @@ sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **to
 
 sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_exponent(context, tokens, pos, end_pos);
-    if (is_context_error(context))
-        return NULL;
+    if (is_context_error(context)) return NULL;
 
     while (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
            (tokens[*pos]->token[0] == '*' || tokens[*pos]->token[0] == '/' || tokens[*pos]->token[0] == '%')) {
@@ -373,8 +387,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
     if (token->type == SQL_OPEN_PAREN) {
         (*pos)++;
         sql_ast_node_t *node = parse_expression(context, tokens, pos, end_pos);
-        if (is_context_error(context))
-            return NULL;
+        if (is_context_error(context)) return NULL;
         if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
             (*pos)++;
         } else {
@@ -393,8 +406,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
         token->type == SQL_LITERAL ||
         token->type == SQL_NUMBER) {
         sql_ast_node_t *node = create_ast_node(context, token);
-        if (is_context_error(context))
-            return NULL;
+        if (is_context_error(context)) return NULL;
         (*pos)++;
 
         if (*pos < end_pos && tokens[*pos]->type == SQL_OPERATOR &&
@@ -406,13 +418,11 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
                  tokens[*pos]->type == SQL_IDENTIFIER ||
                  tokens[*pos]->type == SQL_FUNCTION)) {
                 sql_ast_node_t *cast_type = create_ast_node(context, tokens[*pos]);
-                if (is_context_error(context))
-                    return NULL;
+                if (is_context_error(context)) return NULL;
                 (*pos)++;
 
                 sql_ast_node_t *cast_node = create_ast_node(context, &(sql_token_t){SQL_FUNCTION, "::"});
-                if (is_context_error(context))
-                    return NULL;
+                if (is_context_error(context)) return NULL;
                 cast_node->spec = sql_ctx_get_spec(context, "::");
                 cast_node->left = node;
                 cast_node->right = cast_type;
@@ -433,12 +443,11 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
 sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_token_t *func_name_token = tokens[*pos - 1];
     sql_ast_node_t *func_node = create_ast_node(context, func_name_token);
-    if (is_context_error(context))
-        return NULL;
+    if (is_context_error(context)) return NULL;
     func_node->type = SQL_FUNCTION;
 
     if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
-        (*pos)++; // Consume '('
+        (*pos)++;
 
         if (strcasecmp(func_name_token->token, "EXTRACT") == 0) {
             sql_ast_node_t *field_node = NULL;
@@ -447,7 +456,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             }
 
             if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "FROM") == 0) {
-                (*pos)++; // Consume FROM
+                (*pos)++;
             } else {
                 sql_ctx_error(context, "Expected FROM in EXTRACT function");
                 return NULL;
@@ -456,7 +465,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             sql_ast_node_t *source_node = parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-                (*pos)++; // Consume ')'
+                (*pos)++;
             } else {
                 sql_ctx_error(context, "Expected closing parenthesis for EXTRACT");
                 return NULL;
@@ -469,11 +478,37 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             return func_node;
         }
 
+        if (strcasecmp(func_name_token->token, "CAST") == 0) {
+            sql_ast_node_t *expr_node = parse_expression(context, tokens, pos, end_pos);
+
+            if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "AS") == 0) {
+                sql_ast_node_t *as_node = create_ast_node(context, tokens[(*pos)++]); // Consume AS
+
+                if (*pos < end_pos) {
+                    sql_ast_node_t *type_node = create_ast_node(context, tokens[(*pos)++]); // Consume type
+
+                    if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                        (*pos)++; // Consume ')'
+
+                        expr_node->next = as_node;
+                        as_node->next = type_node;
+                        func_node->left = expr_node;
+                        return func_node;
+                    } else {
+                        sql_ctx_error(context, "Expected closing parenthesis for CAST");
+                        return NULL;
+                    }
+                }
+            }
+            sql_ctx_error(context, "Expected AS in CAST function");
+            return NULL;
+        }
+
         if (strcasecmp(func_name_token->token, "POSITION") == 0) {
             sql_ast_node_t *substr_node = parse_bitwise_or(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "IN") == 0) {
-                (*pos)++; // Consume IN
+                (*pos)++;
             } else {
                 sql_ctx_error(context, "Expected IN in POSITION function");
                 return NULL;
@@ -482,7 +517,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             sql_ast_node_t *str_node = parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-                (*pos)++; // Consume ')'
+                (*pos)++;
             } else {
                 sql_ctx_error(context, "Expected closing parenthesis for POSITION");
                 return NULL;
@@ -503,8 +538,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             }
 
             size_t arg_end = find_argument_end(context, tokens, *pos, end_pos, SQL_CLOSE_PAREN);
-            if (is_context_error(context))
-                return NULL;
+            if (is_context_error(context)) return NULL;
 
             size_t arg_pos = *pos;
             sql_ast_node_t *arg = parse_expression(context, tokens, &arg_pos, arg_end);
@@ -665,6 +699,15 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
                 op_node->type = SQL_COMPARISON;
                 op_node->spec = sql_ctx_get_spec(context, "IS NOT TRUE");
                 return op_node;
+            } else if (strcasecmp(tokens[*pos + 1]->token, "DISTINCT") == 0 &&
+                       (*pos + 2) < end_pos && strcasecmp(tokens[*pos + 2]->token, "FROM") == 0) {
+                (*pos) += 3;
+                op_node->value = aml_pool_strdup(context->pool, "IS NOT DISTINCT FROM");
+                op_node->left = left;
+                op_node->right = parse_bitwise_or(context, tokens, pos, end_pos);
+                op_node->type = SQL_COMPARISON;
+                op_node->spec = sql_ctx_get_spec(context, "IS NOT DISTINCT FROM");
+                return op_node;
             } else {
                 sql_ctx_error(context, "Invalid syntax after 'IS NOT'");
                 return NULL;
@@ -690,6 +733,15 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
                 op_node->left = left;
                 op_node->type = SQL_COMPARISON;
                 op_node->spec = sql_ctx_get_spec(context, "IS TRUE");
+                return op_node;
+            } else if (strcasecmp(tokens[*pos]->token, "DISTINCT") == 0 &&
+                       (*pos + 1) < end_pos && strcasecmp(tokens[*pos + 1]->token, "FROM") == 0) {
+                (*pos) += 2;
+                op_node->value = aml_pool_strdup(context->pool, "IS DISTINCT FROM");
+                op_node->left = left;
+                op_node->right = parse_bitwise_or(context, tokens, pos, end_pos);
+                op_node->type = SQL_COMPARISON;
+                op_node->spec = sql_ctx_get_spec(context, "IS DISTINCT FROM");
                 return op_node;
             } else {
                 sql_ctx_error(context, "Invalid syntax after 'IS'");
@@ -777,7 +829,11 @@ static sql_ast_node_t *parse_not_comparison_expression(sql_ctx_t *context,
     return left;
 }
 
-sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+sql_ast_node_t *parse_comparison(sql_ctx_t *context,
+                                 sql_token_t **tokens,
+                                 size_t *pos,
+                                 size_t end_pos)
+{
     sql_ast_node_t *left = parse_bitwise_or(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 

@@ -241,6 +241,9 @@ void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     } else if ((**s == ':' && (*s)[1] == ':')) {
         _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
         *s += 2;
+    } else if (ch == '|' && (*s)[1] == '|') {
+        _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
+        *s += 2;
     } else if (ch == '=' || ch == '>' || ch == '<' || ch == '!') {
         if(ch == '<' && (*s)[1] == '>') {
             _sql_token_init(bh, pool, start, 2, SQL_COMPARISON, "!=");

@@ -438,8 +438,16 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             }
 
             if (strncasecmp(node->value, "IS", 2) == 0) {
-                char *left = ast_to_string(ctx, node->left);
-                return aml_pool_strdupf(ctx->pool, "(%s %s)", left, node->value);
+                char *left_str = ast_to_string(ctx, node->left);
+
+                if (node->right) {
+                    // It's a binary 'IS' operator (IS [NOT] DISTINCT FROM)
+                    char *right_str = ast_to_string(ctx, node->right);
+                    return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left_str, node->value, right_str);
+                } else {
+                    // It's a unary 'IS' operator (IS NULL, IS TRUE)
+                    return aml_pool_strdupf(ctx->pool, "(%s %s)", left_str, node->value);
+                }
             }
 
             if (strcasecmp(node->value, "IN") == 0 || strcasecmp(node->value, "NOT IN") == 0) {
@@ -486,6 +494,11 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
                 char *substr = ast_to_string(ctx, node->left);
                 char *str = ast_to_string(ctx, node->left->next);
                 return aml_pool_strdupf(ctx->pool, "POSITION(%s IN %s)", substr, str);
+            }
+            if (strcasecmp(node->value, "CAST") == 0 && node->left && node->left->next && node->left->next->next) {
+                char *expr = ast_to_string(ctx, node->left);
+                char *type_str = ast_to_string(ctx, node->left->next->next);
+                return aml_pool_strdupf(ctx->pool, "CAST(%s AS %s)", expr, type_str);
             }
             char *args = ast_list_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
