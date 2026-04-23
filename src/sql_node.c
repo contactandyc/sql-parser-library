@@ -103,17 +103,13 @@ static sql_data_type_t determine_common_type(sql_data_type_t type1, sql_data_typ
     if (type1 == type2) {
         return type1;
     }
-    // Implement type promotion rules
     if ((type1 == SQL_TYPE_INT && type2 == SQL_TYPE_DOUBLE) ||
         (type1 == SQL_TYPE_DOUBLE && type2 == SQL_TYPE_INT)) {
         return SQL_TYPE_DOUBLE;
     }
-
     if(type1 == SQL_TYPE_DATETIME || type2 == SQL_TYPE_DATETIME) {
         return SQL_TYPE_DATETIME;
     }
-
-    // Default to STRING for incompatible types
     return SQL_TYPE_STRING;
 }
 
@@ -124,7 +120,6 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         return;
     }
 
-    // Process child nodes first
     for (size_t i = 0; i < node->num_parameters; i++) {
         apply_type_conversions(context, node->parameters[i]);
     }
@@ -138,9 +133,7 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         bool should_check = true;
         if (left_type == SQL_TYPE_DATETIME && right->type == SQL_COMPOUND_LITERAL) {
             const char *value = right->token;
-            // Ensure the compound literal is a valid INTERVAL
             if (strncasecmp(value, "INTERVAL", 8) == 0) {
-                // Set the operator to a specialized datetime-interval handler
                 should_check = false;
             }
         }
@@ -148,25 +141,20 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
             should_check = false;
         }
 
-        // CRITICAL FIX: Bypass generic coercion for date arithmetic
-        // to preserve INT/DOUBLE offsets (prevents INT 1 -> DATETIME 1 coercion)
         if (node->token_type == SQL_OPERATOR && (left_type == SQL_TYPE_DATETIME || right_type == SQL_TYPE_DATETIME)) {
             should_check = false;
         }
 
         if (should_check && left_type != right_type) {
             if ((left->type == SQL_IDENTIFIER || left->type == SQL_FUNCTION) && is_literal(right)) {
-                // Prefer to convert the literal (right) to the data type of the column (left)
                 right = create_convert_node(context, right, left_type);
                 right->data_type = left_type;
                 node->parameters[1] = right;
             } else if (is_literal(left) && (right->type == SQL_IDENTIFIER || right->type == SQL_FUNCTION)) {
-                // Prefer to convert the literal (left) to the data type of the column (right)
                 left = create_convert_node(context, left, right_type);
                 left->data_type = right_type;
                 node->parameters[0] = left;
             } else {
-                // Use existing type promotion rules
                 sql_data_type_t common_type = determine_common_type(left_type, right_type);
                 if (left_type != common_type) {
                     left = create_convert_node(context, left, common_type);
@@ -182,7 +170,6 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         }
     }
 
-    // Determine expected data types based on the node type
     if (node->token_type == SQL_FUNCTION || node->token_type == SQL_COMPARISON || node->token_type == SQL_OPERATOR ||
         node->token_type == SQL_AND || node->token_type == SQL_OR || node->token_type == SQL_NOT) {
 
@@ -245,9 +232,14 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
     }
 
     if (all_literals && node->func && (node->spec || ctx->row)) {
-        sql_node_t *result_node = node->func(ctx, node);
-        if (result_node) {
-            *node = *result_node;
+        // --- FIX: Respect Volatility ---
+        if (node->spec && node->spec->is_volatile) {
+            // Do nothing. Leave volatile functions alone so they execute per-row.
+        } else {
+            sql_node_t *result_node = node->func(ctx, node);
+            if (result_node) {
+                *node = *result_node;
+            }
         }
     }
 
@@ -352,10 +344,15 @@ void simplify_func_tree(sql_ctx_t *ctx, sql_node_t *node ) {
     }
 
     if (all_literals && node->func && (node->spec || ctx->row)) {
-        sql_node_t *result_node = node->func(ctx, node);
+        // --- FIX: Respect Volatility ---
+        if (node->spec && node->spec->is_volatile) {
+            // Do nothing. Leave volatile functions alone so they execute per-row.
+        } else {
+            sql_node_t *result_node = node->func(ctx, node);
 
-        if (result_node) {
-            *node = *result_node;
+            if (result_node) {
+                *node = *result_node;
+            }
         }
     }
 }

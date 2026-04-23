@@ -112,8 +112,9 @@ static bool bind_ast_node(sql_ctx_t *ctx, query_scope_t *scope, size_t scope_cou
             while (proj) {
                 if (proj->alias && strcasecmp(proj->alias, node->value) == 0) {
                     sql_ast_node_t *next_ptr = node->next;
+                    char *orig_alias = node->value;    // Save the alias text
                     *node = *proj;
-                    node->alias = NULL;
+                    node->alias = orig_alias;          // Restore the alias text instead of zeroing!
                     node->next = next_ptr;
                     return bind_ast_node(ctx, scope, scope_count, NULL, node);
                 }

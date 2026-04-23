@@ -6,7 +6,8 @@
 #include "sql-parser-library/sql_compiler.h"
 #include "sql-parser-library/sql_binder.h"
 #include "the-macro-library/macro_map.h"
-#include "a-memory-library/aml_buffer.h" // --- ADDED ---
+#include "the-macro-library/macro_sort.h"
+#include "a-memory-library/aml_buffer.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -25,10 +26,8 @@ typedef struct {
     size_t num_datasets;
 } vm_catalog_state_t;
 
-// Forward declaration for recursion
 static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes, bool explain_mode);
 
-// --- VIRTUAL TABLE ROUTER ---
 static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
     sql_node_t *dst = aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));
     dst->data_type = src->data_type;
@@ -99,7 +98,53 @@ static sql_ctx_column_t *vm_catalog_router(sql_ctx_t *ctx, const char *table_nam
     return NULL;
 }
 
-// --- VM INITIALIZATION ---
+static void manual_bind_ast(sql_ctx_t *ctx, sql_ast_node_t *node, vm_catalog_state_t *cs) {
+    if (!node) return;
+    if (node->type == SQL_IDENTIFIER && !node->column) {
+        char *tbl = NULL;
+        char *col = node->value;
+        char *dot = strchr(node->value, '.');
+        if (dot) {
+            tbl = aml_pool_strndup(ctx->pool, node->value, dot - node->value);
+            col = dot + 1;
+        }
+        node->column = vm_catalog_router(ctx, tbl, col);
+        if (node->column) {
+            node->column->table_index = -1;
+            for (size_t i = 0; i < cs->num_datasets; i++) {
+                if (strcasecmp(cs->datasets[i]->alias, node->column->table_name) == 0) {
+                    node->column->table_index = (int)i;
+                    break;
+                }
+            }
+        } else {
+            sql_ctx_error(ctx, "Unknown column in window clause: %s", node->value);
+        }
+    }
+    manual_bind_ast(ctx, node->left, cs);
+    manual_bind_ast(ctx, node->right, cs);
+}
+
+static void bind_window_expressions(sql_ctx_t *ctx, sql_select_t *ast, vm_catalog_state_t *cs) {
+    sql_ast_node_t *col = ast->columns;
+    while (col) {
+        if (col->window_clause) {
+            sql_ast_node_t *p = col->window_clause->partition_by;
+            while (p) {
+                manual_bind_ast(ctx, p, cs);
+                p = p->next;
+            }
+            sql_order_by_t *ob = col->window_clause->order_by;
+            while (ob) {
+                manual_bind_ast(ctx, ob->expr, cs);
+                ob = ob->next;
+            }
+        }
+        col = col->next;
+    }
+}
+
+
 sql_vm_t *sql_vm_init(sql_ctx_t *ctx, sql_vm_fetch_table_cb fetch_cb, sql_vm_resolve_column_cb resolve_cb, void *user_data) {
     sql_vm_t *vm = aml_pool_zalloc(ctx->pool, sizeof(sql_vm_t));
     vm->ctx = ctx;
@@ -134,7 +179,6 @@ sql_dataset_t *sql_vm_create_streaming_dataset(sql_vm_t *vm, void *stream_state,
     return ds;
 }
 
-// --- MACRO MAP GROUPING ---
 typedef struct join_row_s {
     void *row;
     struct join_row_s *next;
@@ -195,7 +239,6 @@ static bool node_depends_on_table(sql_node_t *node, int t_idx) {
     return false;
 }
 
-// --- INDEX HARVESTER ---
 static void harvest_index_conditions(sql_ctx_t *ctx, sql_node_t *filter_node, int table_idx, const char *col_name,
                                      sql_node_t **out_exact, sql_node_t **out_min, sql_node_t **out_max) {
     if (!filter_node) return;
@@ -289,7 +332,6 @@ static void optimize_indexes_for_table(sql_ctx_t *ctx, sql_table_request_t *req,
     }
 }
 
-// --- DUAL-MODE NESTED LOOP EXECUTOR ---
 static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                          int num_datasets, int step, int *exec_order, void **current_row_set,
                          sql_dataset_t **datasets, sql_table_request_t **req_array,
@@ -355,7 +397,7 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                 compiled->agg_nodes[a]->spec->agg_step(ctx, compiled->agg_nodes[a], active_group->agg_states[a]);
             }
         } else {
-            sql_result_set_append(ctx, rs, compiled->projections, compiled->sort_exprs);
+            sql_result_set_append(ctx, rs, compiled);
         }
         return;
     }
@@ -363,7 +405,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     int t_idx = exec_order[step];
     sql_table_request_t *req = req_array[t_idx];
 
-    // --- HASH JOIN PROBE PHASE ---
     if (join_maps && join_maps[step]) {
         sql_node_t *probe_key = sql_eval(ctx, join_probe_exprs[step]);
         bool matched_any = false;
@@ -401,7 +442,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     sql_node_t *join_cond = step_join_conds[step];
     bool matched_any = false;
 
-    // --- INDEX LOOKUP FAST PATH ---
     if (req && req->scan_strategy == SCAN_INDEX_LOOKUP && req->index_to_use) {
         size_t match_count = 0;
         void **matched_rows = NULL;
@@ -454,7 +494,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
         return;
     }
 
-    // --- STANDARD READ LOOP (NESTED LOOP FALLBACK) ---
     size_t mat_idx = 0;
     void *raw_row = NULL;
 
@@ -496,7 +535,106 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     }
 }
 
-// --- VM EXECUTION ---
+typedef struct {
+    sql_window_plan_t *wp;
+    size_t cache_offset_part;
+    size_t cache_offset_sort;
+} win_sort_cfg_t;
+
+static int window_row_comparator(const void *a, const void *b, void *arg) {
+    win_sort_cfg_t *cfg = (win_sort_cfg_t *)arg;
+    sql_result_row_t *ra = *(sql_result_row_t **)a;
+    sql_result_row_t *rb = *(sql_result_row_t **)b;
+
+    for(size_t i=0; i<cfg->wp->num_partition_keys; i++) {
+        int cmp = compare_sql_nodes(ra->window_cache[cfg->cache_offset_part + i], rb->window_cache[cfg->cache_offset_part + i]);
+        if (cmp != 0) return cmp;
+    }
+    for(size_t i=0; i<cfg->wp->num_sort_keys; i++) {
+        int cmp = compare_sql_nodes(ra->window_cache[cfg->cache_offset_sort + i], rb->window_cache[cfg->cache_offset_sort + i]);
+        if (cmp != 0) return cmp * cfg->wp->sort_directions[i];
+    }
+    return 0;
+}
+
+static inline
+_macro_sort(internal_window_sort, cmp_arg, sql_result_row_t*, window_row_comparator)
+
+static void sql_execute_windows(sql_ctx_t *ctx, sql_result_set_t *rs, sql_compiled_query_t *compiled) {
+    if (compiled->num_window_plans == 0 || rs->count == 0) return;
+
+    sql_result_row_t **row_ptrs = aml_pool_alloc(ctx->pool, rs->count * sizeof(sql_result_row_t *));
+    size_t global_cache_offset = 0;
+
+    for (size_t w = 0; w < compiled->num_window_plans; w++) {
+        sql_window_plan_t *wp = compiled->window_plans[w];
+        for(size_t i=0; i<rs->count; i++) row_ptrs[i] = &rs->rows[i];
+
+        win_sort_cfg_t cfg;
+        cfg.wp = wp;
+        cfg.cache_offset_part = global_cache_offset;
+        cfg.cache_offset_sort = global_cache_offset + wp->num_partition_keys;
+        size_t cache_offset_args = cfg.cache_offset_sort + wp->num_sort_keys;
+
+        internal_window_sort(row_ptrs, rs->count, &cfg);
+
+        void *state = aml_pool_zalloc(ctx->pool, wp->func_node->spec->state_size);
+        wp->func_node->spec->agg_init(state);
+
+        sql_node_t **orig_params = aml_pool_alloc(ctx->pool, wp->func_node->num_parameters * sizeof(sql_node_t *));
+        for(size_t p=0; p<wp->func_node->num_parameters; p++) orig_params[p] = wp->func_node->parameters[p];
+
+        for(size_t i=0; i<rs->count; i++) {
+            sql_result_row_t *row = row_ptrs[i];
+            sql_result_row_t *prev = i > 0 ? row_ptrs[i-1] : NULL;
+
+            bool partition_changed = false;
+            if (prev) {
+                for(size_t k=0; k<wp->num_partition_keys; k++) {
+                    if (compare_sql_nodes(row->window_cache[cfg.cache_offset_part + k], prev->window_cache[cfg.cache_offset_part + k]) != 0) {
+                        partition_changed = true; break;
+                    }
+                }
+            } else {
+                partition_changed = true;
+            }
+
+            if (partition_changed && i > 0) {
+                wp->func_node->spec->agg_init(state);
+            }
+
+            bool tie = false;
+            if (!partition_changed && i > 0 && wp->num_sort_keys > 0) {
+                tie = true;
+                for(size_t k=0; k<wp->num_sort_keys; k++) {
+                    if (compare_sql_nodes(row->window_cache[cfg.cache_offset_sort + k], prev->window_cache[cfg.cache_offset_sort + k]) != 0) {
+                        tie = false; break;
+                    }
+                }
+            }
+
+            if (strcasecmp(wp->func_node->spec->name, "RANK") == 0) {
+                typedef struct { int current_rank; int rows_in_partition; } rank_state_t;
+                rank_state_t *rs_state = (rank_state_t *)state;
+                if (!tie && !partition_changed && i > 0) {
+                    rs_state->current_rank = rs_state->rows_in_partition + 1;
+                }
+            }
+
+            for(size_t p=0; p<wp->func_node->num_parameters; p++) {
+                wp->func_node->parameters[p] = row->window_cache[cache_offset_args + p];
+            }
+
+            wp->func_node->spec->agg_step(ctx, wp->func_node, state);
+            row->columns[wp->projection_index] = wp->func_node->spec->agg_finalize(ctx, wp->func_node, state);
+        }
+
+        for(size_t p=0; p<wp->func_node->num_parameters; p++) wp->func_node->parameters[p] = orig_params[p];
+
+        global_cache_offset += wp->num_partition_keys + wp->num_sort_keys + wp->func_node->num_parameters;
+    }
+}
+
 static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes, bool explain_mode) {
     if (!ast) return NULL;
     sql_ctx_t *ctx = vm->ctx;
@@ -506,7 +644,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         VM_DEBUG("[VM-INIT] Executing Sub-Tree: %s\n", forced_alias);
     }
 
-    // --- 1. EAGER-EVALUATE COMMON TABLE EXPRESSIONS (WITH) ---
     size_t num_local_ctes = 0;
     sql_cte_t *cte = ast->ctes;
     while(cte) { num_local_ctes++; cte = cte->next; }
@@ -533,7 +670,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     sql_dataset_t **datasets = aml_pool_alloc(ctx->pool, 16 * sizeof(sql_dataset_t *));
     size_t num_datasets = 0;
 
-    // --- BASE TABLE FETCHING ---
     if (ast->subquery) {
         datasets[num_datasets] = internal_execute(vm, ast->subquery, ast->table_alias ? ast->table_alias : "subquery", available_ctes, num_available_ctes, explain_mode);
         datasets[num_datasets]->table_name = "subquery";
@@ -563,7 +699,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         }
     }
 
-    // --- JOIN FETCHING ---
     sql_join_t *j = ast->joins;
     while (j) {
         if (j->subquery) {
@@ -607,6 +742,40 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     void **old_agg_states = ctx->current_agg_states;
     ctx->catalog_state = cs;
 
+    if (ast->is_star) {
+        sql_ast_node_t *head = NULL, *tail = NULL;
+        bool can_expand = true;
+        for (size_t i = 0; i < cs->num_datasets; i++) {
+            if (!cs->datasets[i]->is_virtual) {
+                can_expand = false;
+                break;
+            }
+        }
+
+        if (can_expand) {
+            for (size_t i = 0; i < cs->num_datasets; i++) {
+                sql_dataset_t *ds = cs->datasets[i];
+                for (size_t c = 0; c < ds->num_columns; c++) {
+                    sql_ast_node_t *col_node = aml_pool_zalloc(ctx->pool, sizeof(sql_ast_node_t));
+                    col_node->type = SQL_IDENTIFIER;
+                    col_node->value = aml_pool_strdupf(ctx->pool, "%s.%s", ds->alias, ds->column_names[c]);
+                    col_node->alias = aml_pool_strdup(ctx->pool, ds->column_names[c]);
+
+                    if (!head) head = tail = col_node;
+                    else { tail->next = col_node; tail = col_node; }
+                }
+            }
+            ast->is_star = false;
+            ast->columns = head;
+        } else {
+            sql_ctx_error(ctx, "Engine Limitation: SELECT * is currently only supported on subqueries and CTEs.");
+            ctx->catalog_state = old_catalog_state;
+            return NULL;
+        }
+    }
+
+    bind_window_expressions(ctx, ast, cs);
+
     if (!sql_bind_query_extended(ctx, ast)) {
         ctx->catalog_state = old_catalog_state;
         ctx->row = old_row;
@@ -620,7 +789,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     int *exec_order = aml_pool_alloc(ctx->pool, num_datasets * sizeof(int));
     for (int i = 0; i < num_datasets; i++) exec_order[i] = i;
 
-    // --- 1. UNIVERSAL JOIN REORDERING OPTIMIZER ---
     if (!explain_mode) VM_DEBUG("[VM-OPT] Running Universal Reordering Pass...\n");
     bool changed = true;
     while (changed) {
@@ -662,7 +830,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         }
     }
 
-    // --- 2. DYNAMIC CONDITION SCHEDULER ---
     sql_node_t **step_join_conds = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
     sql_join_type_t *step_join_types = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_join_type_t));
 
@@ -684,7 +851,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         jp_pass = jp_pass->next;
     }
 
-    // --- 2.5 LOCAL FILTER & INDEX OPTIMIZATION ---
     sql_node_t **local_filters = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
     sql_table_request_t **req_array = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_table_request_t *));
 
@@ -700,7 +866,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     sql_compiled_query_t *compiled = sql_compile_query(ctx, ast);
 
-    // --- EXPLAIN MODE INTERCEPT ---
+    // --- FULL EXPLAIN PIPELINE OUTPUT ---
     if (explain_mode) {
         aml_buffer_t *buf = aml_buffer_pool_init(ctx->pool, 2048);
 
@@ -717,6 +883,55 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         for (int i = 0; i < num_datasets; i++) {
             aml_buffer_appendf(buf, "%d. %s (%s)\n", i + 1, datasets[exec_order[i]]->table_name, datasets[exec_order[i]]->alias);
         }
+
+        if (ast->group_by) {
+            aml_buffer_appendf(buf, "\n--- 4. GROUPING ---\n");
+            aml_buffer_appendf(buf, "GROUP BY: ");
+            sql_ast_node_t *gb = ast->group_by;
+            while(gb) {
+                char *str = sql_ast_to_string(ctx, gb);
+                aml_buffer_appendf(buf, "%s%s", str, gb->next ? ", " : "");
+                gb = gb->next;
+            }
+            aml_buffer_appendf(buf, "\n");
+        }
+
+        if (ast->having_clause) {
+            char *hav_str = sql_ast_to_string(ctx, ast->having_clause);
+            aml_buffer_appendf(buf, "HAVING: %s\n", hav_str);
+        }
+
+        if (compiled->num_window_plans > 0) {
+            aml_buffer_appendf(buf, "\n--- 5. WINDOW EXECUTION PHASE ---\n");
+            for (size_t w = 0; w < compiled->num_window_plans; w++) {
+                aml_buffer_appendf(buf, "Evaluate Window: [%zu]\n", w);
+            }
+        }
+
+        if (ast->order_by) {
+            aml_buffer_appendf(buf, "\n--- 6. SORTING ---\n");
+            aml_buffer_appendf(buf, "ORDER BY: ");
+            sql_order_by_t *ob = ast->order_by;
+            while(ob) {
+                char *str = sql_ast_to_string(ctx, ob->expr);
+                aml_buffer_appendf(buf, "%s %s%s", str, ob->is_desc ? "DESC" : "ASC", ob->next ? ", " : "");
+                ob = ob->next;
+            }
+            aml_buffer_appendf(buf, "\n");
+        }
+
+        if (ast->limit || ast->offset) {
+            aml_buffer_appendf(buf, "\n--- 7. TRUNCATION ---\n");
+            if (ast->limit) {
+                char *lim_str = sql_ast_to_string(ctx, ast->limit);
+                aml_buffer_appendf(buf, "LIMIT: %s\n", lim_str);
+            }
+            if (ast->offset) {
+                char *off_str = sql_ast_to_string(ctx, ast->offset);
+                aml_buffer_appendf(buf, "OFFSET: %s\n", off_str);
+            }
+        }
+
         aml_buffer_appendf(buf, "===============================\n");
         aml_buffer_appendc(buf, '\0');
 
@@ -727,7 +942,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         sql_dataset_t *out_ds = aml_pool_zalloc(ctx->pool, sizeof(sql_dataset_t));
         out_ds->is_virtual = true;
         out_ds->mode = DS_MODE_MATERIALIZED;
-        out_ds->rs = sql_result_set_init(ctx->pool, 0, NULL, 0, NULL);
+        out_ds->rs = sql_result_set_init(ctx->pool, 0, NULL, 0, NULL, NULL);
         out_ds->alias = forced_alias;
 
         out_ds->num_columns = compiled->num_projections;
@@ -738,12 +953,9 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         }
 
         out_ds->rs->explain_output = aml_buffer_data(buf);
-
         return out_ds;
     }
 
-
-    // --- 3. HASH JOIN BUILD PHASE ---
     macro_map_t **join_maps = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(macro_map_t *));
     sql_node_t **join_probe_exprs = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
 
@@ -833,8 +1045,15 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     sql_node_t *global_filter = sql_compile_expression(ctx, plan->global_filters);
 
-    // --- LAUNCH CORE EXECUTION ---
-    sql_result_set_t *rs = sql_result_set_init(ctx->pool, compiled->num_projections, compiled->display_names, compiled->num_sort_keys, compiled->sort_directions);
+    sql_result_set_t *rs = sql_result_set_init(ctx->pool, compiled->num_projections, compiled->display_names, compiled->num_sort_keys, compiled->sort_directions, compiled->sort_projection_indices);
+
+    size_t win_cache_size = 0;
+    for(size_t w=0; w < compiled->num_window_plans; w++) {
+        win_cache_size += compiled->window_plans[w]->num_partition_keys;
+        win_cache_size += compiled->window_plans[w]->num_sort_keys;
+        win_cache_size += compiled->window_plans[w]->func_node->num_parameters;
+    }
+    rs->window_cache_size = win_cache_size;
 
     macro_map_t *group_map_root = NULL;
     group_node_t *global_group = NULL;
@@ -855,7 +1074,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                 sql_node_t *res = sql_eval(ctx, compiled->having_filter);
                 if (!res || res->is_null || !res->value.bool_value) continue;
             }
-            sql_result_set_append(ctx, rs, compiled->projections, compiled->sort_exprs);
+            sql_result_set_append(ctx, rs, compiled);
         }
     } else if (global_group) {
         ctx->current_agg_states = global_group->agg_states;
@@ -865,8 +1084,10 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
             sql_node_t *res = sql_eval(ctx, compiled->having_filter);
             if (!res || res->is_null || !res->value.bool_value) pass = false;
         }
-        if (pass) sql_result_set_append(ctx, rs, compiled->projections, compiled->sort_exprs);
+        if (pass) sql_result_set_append(ctx, rs, compiled);
     }
+
+    sql_execute_windows(ctx, rs, compiled);
 
     sql_result_set_sort(rs);
 

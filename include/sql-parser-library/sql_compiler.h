@@ -13,9 +13,22 @@
 #include "sql-parser-library/sql_node.h"
 
 typedef struct {
+    size_t projection_index;
+    sql_node_t *func_node;
+    sql_node_t **partition_exprs;
+    size_t num_partition_keys;
+    sql_node_t **sort_exprs;
+    int *sort_directions;
+    size_t num_sort_keys;
+} sql_window_plan_t;
+
+typedef struct sql_compiled_query_s {
     sql_node_t **projections;
     const char **display_names;
     size_t num_projections;
+
+    sql_window_plan_t **window_plans;
+    size_t num_window_plans;
 
     sql_node_t **group_exprs;
     size_t num_group_keys;
@@ -26,6 +39,7 @@ typedef struct {
 
     sql_node_t **sort_exprs;
     int *sort_directions;
+    int *sort_projection_indices; // --- NEW: Links ORDER BY terms to SELECT columns ---
     size_t num_sort_keys;
 
     sql_node_t *limit;

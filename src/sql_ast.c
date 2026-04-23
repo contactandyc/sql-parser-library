@@ -796,7 +796,12 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
     if (is_context_error(context)) return NULL;
 
     if (operator_token->token[0] == '>') {
-        op_node->value[0] = '<';
+        // --- SECURE ALLOCATION FIX ---
+        if (strcmp(operator_token->token, ">=") == 0) {
+            op_node->value = aml_pool_strdup(context->pool, "<=");
+        } else {
+            op_node->value = aml_pool_strdup(context->pool, "<");
+        }
         op_node->left = right;
         op_node->right = left;
     } else {

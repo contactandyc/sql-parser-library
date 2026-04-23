@@ -10,9 +10,12 @@
 #include "sql-parser-library/sql_ctx.h"
 #include "sql-parser-library/sql_node.h"
 
+struct sql_compiled_query_s;
+
 typedef struct {
     sql_node_t **columns;
     sql_node_t **sort_keys;
+    sql_node_t **window_cache;
 } sql_result_row_t;
 
 typedef struct {
@@ -27,13 +30,15 @@ typedef struct {
     size_t num_sort_keys;
 
     int *sort_directions;
+    int *sort_projection_indices; // --- NEW ---
 
-    // --- NEW: Buffer for EXPLAIN plans ---
     char *explain_output;
+    size_t window_cache_size;
 } sql_result_set_t;
 
-sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, const char **column_names, size_t num_sort_keys, int *sort_directions);
-void sql_result_set_append(sql_ctx_t *ctx, sql_result_set_t *rs, sql_node_t **projections, sql_node_t **sort_exprs);
+sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, const char **column_names, size_t num_sort_keys, int *sort_directions, int *sort_projection_indices);
+
+void sql_result_set_append(sql_ctx_t *ctx, sql_result_set_t *rs, struct sql_compiled_query_s *compiled);
 void sql_result_set_sort(sql_result_set_t *rs);
 
 #endif /* _sql_result_set_H */

@@ -5,7 +5,7 @@
 // Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_planner.h"
-#include "sql-parser-library/sql_vm.h" // For the sql_index_t definition
+#include "sql-parser-library/sql_vm.h"
 #include "a-memory-library/aml_pool.h"
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +37,16 @@ static void extract_columns_from_ast(sql_ast_node_t *node, plan_table_state_t *s
         int idx = node->column->table_index;
         if (idx >= 0 && idx < (int)num_states) {
             add_required_column(&states[idx], node->column->name);
+        }
+    }
+
+    // --- FIX: Ensure the planner hunts inside the Window Clause for dependencies! ---
+    if (node->window_clause) {
+        extract_columns_from_ast(node->window_clause->partition_by, states, num_states);
+        sql_order_by_t *ob = node->window_clause->order_by;
+        while(ob) {
+            extract_columns_from_ast(ob->expr, states, num_states);
+            ob = ob->next;
         }
     }
 
@@ -253,7 +263,6 @@ void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     plan->global_filters = pushdown_node(ctx, plan, plan->global_filters, safe_to_pushdown);
 }
 
-// --- UPDATED: Prints securely to aml_buffer_t ---
 void sql_print_plan(aml_buffer_t *buf, sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     if (!plan) return;
 

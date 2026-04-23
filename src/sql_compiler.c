@@ -20,7 +20,7 @@ sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
 static void collect_aggregates(sql_node_t *node, sql_node_t **agg_array, size_t *count) {
     if (!node) return;
 
-    if (node->spec && node->spec->is_aggregate) {
+    if (node->spec && node->spec->is_aggregate && !node->spec->is_window_func) {
         node->agg_index = *count;
         agg_array[*count] = node;
         (*count)++;
@@ -51,7 +51,6 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         for (size_t i = 0; i < num_projs; i++) {
             compiled->projections[i] = sql_compile_expression(ctx, curr_col);
 
-            // --- FIX: Strip table prefixes from physical column names for Virtual Tables ---
             if (curr_col->alias) {
                 compiled->display_names[i] = curr_col->alias;
             } else if (curr_col->value) {
@@ -60,7 +59,58 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
             } else {
                 compiled->display_names[i] = "expr";
             }
+            curr_col = curr_col->next;
+        }
+    }
 
+    // --- Map the Window Plans ---
+    size_t win_count = 0;
+    curr_col = ast->columns;
+    while (curr_col) {
+        if (curr_col->type == SQL_FUNCTION && curr_col->window_clause) win_count++;
+        curr_col = curr_col->next;
+    }
+
+    if (win_count > 0) {
+        compiled->num_window_plans = win_count;
+        compiled->window_plans = aml_pool_alloc(ctx->pool, win_count * sizeof(sql_window_plan_t *));
+        size_t w_idx = 0;
+
+        curr_col = ast->columns;
+        for (size_t i = 0; i < num_projs; i++) {
+            if (curr_col->type == SQL_FUNCTION && curr_col->window_clause) {
+                sql_window_plan_t *wp = aml_pool_zalloc(ctx->pool, sizeof(sql_window_plan_t));
+                wp->projection_index = i;
+                wp->func_node = compiled->projections[i];
+
+                size_t n_part = 0;
+                sql_ast_node_t *p = curr_col->window_clause->partition_by;
+                while(p) { n_part++; p = p->next; }
+                wp->num_partition_keys = n_part;
+                wp->partition_exprs = aml_pool_alloc(ctx->pool, n_part * sizeof(sql_node_t*));
+
+                p = curr_col->window_clause->partition_by;
+                for(size_t k=0; k<n_part; k++) {
+                    wp->partition_exprs[k] = sql_compile_expression(ctx, p);
+                    p = p->next;
+                }
+
+                size_t n_sort = 0;
+                sql_order_by_t *ob = curr_col->window_clause->order_by;
+                while(ob) { n_sort++; ob = ob->next; }
+                wp->num_sort_keys = n_sort;
+                wp->sort_exprs = aml_pool_alloc(ctx->pool, n_sort * sizeof(sql_node_t*));
+                wp->sort_directions = aml_pool_alloc(ctx->pool, n_sort * sizeof(int));
+
+                ob = curr_col->window_clause->order_by;
+                for(size_t k=0; k<n_sort; k++) {
+                    wp->sort_exprs[k] = sql_compile_expression(ctx, ob->expr);
+                    wp->sort_directions[k] = ob->is_desc ? -1 : 1;
+                    ob = ob->next;
+                }
+
+                compiled->window_plans[w_idx++] = wp;
+            }
             curr_col = curr_col->next;
         }
     }
@@ -83,7 +133,7 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
     // 3. Compile HAVING
     compiled->having_filter = sql_compile_expression(ctx, ast->having_clause);
 
-    // 4. Sorting
+    // 4. Sorting (WITH ALIAS LINKING)
     size_t num_sorts = 0;
     sql_order_by_t *curr_ob = ast->order_by;
     while (curr_ob) { num_sorts++; curr_ob = curr_ob->next; }
@@ -92,11 +142,40 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         compiled->num_sort_keys = num_sorts;
         compiled->sort_exprs = aml_pool_alloc(ctx->pool, num_sorts * sizeof(sql_node_t *));
         compiled->sort_directions = aml_pool_alloc(ctx->pool, num_sorts * sizeof(int));
+        compiled->sort_projection_indices = aml_pool_alloc(ctx->pool, num_sorts * sizeof(int));
 
         curr_ob = ast->order_by;
         for (size_t i = 0; i < num_sorts; i++) {
             compiled->sort_exprs[i] = sql_compile_expression(ctx, curr_ob->expr);
             compiled->sort_directions[i] = curr_ob->is_desc ? -1 : 1;
+            compiled->sort_projection_indices[i] = -1;
+
+            // Alias carried over from binder's projection injection
+            if (curr_ob->expr->alias) {
+                for (size_t p = 0; p < compiled->num_projections; p++) {
+                    if (strcasecmp(curr_ob->expr->alias, compiled->display_names[p]) == 0) {
+                        compiled->sort_projection_indices[i] = (int)p;
+                        break;
+                    }
+                }
+            }
+
+            // Existing identifier-based fallback
+            if (compiled->sort_projection_indices[i] == -1 &&
+                curr_ob->expr->type == SQL_IDENTIFIER && curr_ob->expr->value) {
+
+                const char *ob_name = curr_ob->expr->value;
+                const char *dot = strchr(ob_name, '.');
+                if (dot) ob_name = dot + 1;
+
+                for (size_t p = 0; p < compiled->num_projections; p++) {
+                    if (strcasecmp(ob_name, compiled->display_names[p]) == 0) {
+                        compiled->sort_projection_indices[i] = (int)p;
+                        break;
+                    }
+                }
+            }
+
             curr_ob = curr_ob->next;
         }
     }

@@ -475,7 +475,38 @@ int main(int argc, char **argv) {
         "JOIN nation n ON s.nationkey = n.nationkey "
         "WHERE p.mfgr = 'Manufacturer#1' "
         "GROUP BY n.name "
-        "ORDER BY Revenue DESC"
+        "ORDER BY Revenue DESC",
+
+        // --- NEW: WINDOW FUNCTION TESTS ---
+
+        // Test 13: Simple Global ROW_NUMBER (No partitions, just order)
+        "SELECT name, regionkey, ROW_NUMBER() OVER (ORDER BY name ASC) AS row_num "
+        "FROM nation "
+        "LIMIT 10",
+
+        // Test 14: Partitioned ROW_NUMBER (Resets state when region changes)
+        "SELECT r.name AS Region, n.name AS Nation, ROW_NUMBER() OVER (PARTITION BY r.name ORDER BY n.name ASC) AS nation_rank "
+        "FROM nation n "
+        "JOIN region r ON n.regionkey = r.regionkey "
+        "ORDER BY Region ASC, nation_rank ASC",
+
+        // Test 15: RANK vs ROW_NUMBER (Tests ties and gaps)
+        "SELECT mfgr, brand, size, "
+        "ROW_NUMBER() OVER (PARTITION BY mfgr ORDER BY size DESC) AS rn, "
+        "RANK() OVER (PARTITION BY mfgr ORDER BY size DESC) AS rnk "
+        "FROM part "
+        "WHERE mfgr = 'Manufacturer#1' "
+        "LIMIT 15",
+
+        // Test 16: Top-N per Category (Uses Window Function in subquery)
+        "SELECT * FROM ( "
+        "    SELECT r.name AS Region, n.name AS Nation, "
+        "    ROW_NUMBER() OVER (PARTITION BY r.name ORDER BY n.nationkey DESC) AS rn "
+        "    FROM nation n "
+        "    JOIN region r ON n.regionkey = r.regionkey "
+        ") AS ranked_nations "
+        "WHERE ranked_nations.rn <= 2 "
+        "ORDER BY Region ASC, rn ASC"
     };
 
     size_t num_queries = sizeof(queries) / sizeof(queries[0]);

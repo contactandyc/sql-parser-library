@@ -103,6 +103,8 @@ struct sql_ctx_spec_s {
     void (*agg_init)(void *state);
     void (*agg_step)(sql_ctx_t *ctx, struct sql_node_s *f, void *state);
     struct sql_node_s *(*agg_finalize)(sql_ctx_t *ctx, struct sql_node_s *f, void *state);
+    bool is_volatile;
+    bool is_window_func;
 };
 
 void sql_reserve_default_keywords(sql_ctx_t *ctx);
@@ -141,6 +143,8 @@ void sql_register_avg(sql_ctx_t *ctx);
 void sql_register_count(sql_ctx_t *ctx);
 void sql_register_sum(sql_ctx_t *ctx);
 
+void sql_register_row_number(sql_ctx_t *ctx);
+void sql_register_rank(sql_ctx_t *ctx);
 
 static inline
 void register_ctx(sql_ctx_t *ctx) {
@@ -178,6 +182,10 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_avg(ctx);
     sql_register_count(ctx);
     sql_register_sum(ctx);
+
+    // Window functions
+    sql_register_row_number(ctx);
+    sql_register_rank(ctx);
 }
 
 sql_node_t *sql_eval(sql_ctx_t *ctx, sql_node_t *f);
