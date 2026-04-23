@@ -240,7 +240,6 @@ void **str_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t 
     return idx->result_buffer;
 }
 
-
 // --- 7. DUAL-MODE DYNAMIC TABLE LOADER ---
 sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
     int t_idx = -1;
@@ -256,9 +255,7 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
     size_t file_size = io_file_size(filepath);
     if (file_size == 0 && !io_file_exists(filepath)) return NULL;
 
-    // The Magic Threshold: 25 MB!
     if (file_size < 25 * 1024 * 1024) {
-        printf("[SCHEMA] Loading '%s' into Memory (Size: %zu bytes)\n", table, file_size);
         size_t len;
         char *data = io_pool_read_file(vm->pool, &len, filepath);
 
@@ -279,9 +276,7 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
 
         sql_dataset_t *ds = sql_vm_create_materialized_dataset(vm, lines, row_ptrs);
 
-        // --- NEW: ATTACH INDEXES TO THE DATASET ---
-        if (t_idx == 0) { // region
-            // Build String Index on region.name
+        if (t_idx == 0) {
             sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
             const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
             cols[0] = "name";
@@ -306,8 +301,7 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
             ds->indexes = aml_pool_alloc(vm->pool, sizeof(sql_index_t*));
             ds->indexes[0] = idx;
         }
-        else if (t_idx == 1) { // nation
-            // Build Int Index on nation.nationkey
+        else if (t_idx == 1) {
             sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
             const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
             cols[0] = "nationkey";
@@ -332,8 +326,7 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
             ds->indexes = aml_pool_alloc(vm->pool, sizeof(sql_index_t*));
             ds->indexes[0] = idx;
         }
-        else if (t_idx == 3) { // part
-            // Build String Index on part.mfgr
+        else if (t_idx == 3) {
             sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
             const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
             cols[0] = "mfgr";
@@ -362,7 +355,6 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
         return ds;
     }
     else {
-        printf("[SCHEMA] Streaming '%s' from Disk (Size: %zu bytes)\n", table, file_size);
         tpch_stream_t *stream = aml_pool_zalloc(vm->pool, sizeof(tpch_stream_t));
         strcpy(stream->filename, filepath);
         stream->table_type = t_idx;
@@ -378,7 +370,7 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
 // --- 8. EXECUTION ---
 int main(int argc, char **argv) {
     const char *queries[] = {
-        // Test 1: Simple Scan & Filter (Should use the region.name STRING index)
+        // Test 1: Simple Scan & Filter
         "SELECT name, comment "
         "FROM region "
         "WHERE name = 'AMERICA'",
@@ -405,7 +397,7 @@ int main(int argc, char **argv) {
         "HAVING NationKeySum > 10 "
         "ORDER BY Region DESC",
 
-        // Test 5: The 4-Table TPC-H Beast (Should heavily leverage the part.mfgr STRING index)
+        // Test 5: The 4-Table TPC-H Beast
         "SELECT n.name AS Nation, SUM(l.extendedprice * (1 - l.discount)) AS Revenue "
         "FROM part p "
         "JOIN lineitem l ON p.partkey = l.partkey "
@@ -427,7 +419,7 @@ int main(int argc, char **argv) {
         "FROM regional_nations "
         "GROUP BY Region",
 
-        // Test 7: Multiple CTEs referencing each other (Tests complex scope resolution)
+        // Test 7: Multiple CTEs referencing each other
         "WITH supplier_count AS ( "
         "    SELECT nationkey, COUNT(suppkey) AS supp_count "
         "    FROM supplier "
@@ -444,7 +436,7 @@ int main(int argc, char **argv) {
         "GROUP BY nr.region_name "
         "ORDER BY total_suppliers DESC",
 
-        // Test 8: LEFT JOIN & COUNT (Tests null handling and non-matching rows)
+        // Test 8: LEFT JOIN & COUNT
         "SELECT n.name AS Nation, COUNT(s.suppkey) AS Supp_Count "
         "FROM nation n "
         "LEFT JOIN supplier s ON n.nationkey = s.nationkey "
@@ -452,14 +444,14 @@ int main(int argc, char **argv) {
         "ORDER BY Supp_Count ASC, Nation ASC "
         "LIMIT 10",
 
-        // Test 9: Complex Aggregation Math (Tests the arithmetic execution bridge)
+        // Test 9: Complex Aggregation Math
         "SELECT c.mktsegment, SUM(c.acctbal) AS TotalBal, (SUM(c.acctbal) / COUNT(c.custkey)) AS AvgBal "
         "FROM customer c "
         "GROUP BY c.mktsegment "
         "HAVING AvgBal > 4000 "
         "ORDER BY TotalBal DESC",
 
-        // Test 10: Deeply Nested Subqueries (Tests virtual table routing in the FROM clause)
+        // Test 10: Deeply Nested Subqueries
         "SELECT top_nations.Region, top_nations.Nation "
         "FROM ( "
         "    SELECT r.name AS Region, n.name AS Nation "
@@ -469,13 +461,23 @@ int main(int argc, char **argv) {
         "WHERE top_nations.Region = 'EUROPE' "
         "ORDER BY top_nations.Nation ASC",
 
-        // Test 11: IS NULL and Boolean logic (Tests the logical simplifier)
+        // Test 11: IS NULL and Boolean logic
         "SELECT c.name, c.acctbal "
         "FROM customer c "
         "LEFT JOIN orders o ON c.custkey = o.custkey "
         "WHERE o.orderkey IS NULL AND c.acctbal > 9000 "
         "ORDER BY c.acctbal DESC "
-        "LIMIT 5"
+        "LIMIT 5",
+
+        // Test 12: General Multi-Join test
+        "SELECT n.name AS Nation, SUM(l.extendedprice * (1 - l.discount)) AS Revenue "
+        "FROM part p "
+        "JOIN lineitem l ON p.partkey = l.partkey "
+        "JOIN supplier s ON l.suppkey = s.suppkey "
+        "JOIN nation n ON s.nationkey = n.nationkey "
+        "WHERE p.mfgr = 'Manufacturer#1' "
+        "GROUP BY n.name "
+        "ORDER BY Revenue DESC"
     };
 
     size_t num_queries = sizeof(queries) / sizeof(queries[0]);
@@ -485,45 +487,68 @@ int main(int argc, char **argv) {
         printf("Executing Query %zu:\n%s\n", i + 1, queries[i]);
         printf("======================================================\n");
 
-        aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
-        sql_ctx_t context = {0};
-        context.pool = pool;
-        register_ctx(&context);
+        // --- EXPLAIN PHASE ---
+        {
+            aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
+            sql_ctx_t context = {0};
+            context.pool = pool;
+            register_ctx(&context);
 
-        sql_vm_t *vm = sql_vm_init(&context, my_fetch_table, my_resolve_col, NULL);
+            sql_vm_t *vm = sql_vm_init(&context, my_fetch_table, my_resolve_col, NULL);
 
-        size_t token_count;
-        sql_token_t **tokens = sql_tokenize(&context, queries[i], &token_count);
-        sql_select_t *query_ast = sql_parse_query(&context, tokens, token_count);
+            char *explain_str = aml_pool_strdupf(pool, "EXPLAIN %s", queries[i]);
+            size_t token_count;
+            sql_token_t **tokens = sql_tokenize(&context, explain_str, &token_count);
+            sql_select_t *query_ast = sql_parse_query(&context, tokens, token_count);
 
-        sql_result_set_t *rs = sql_vm_execute(vm, query_ast);
-
-        if (rs) {
-            printf("\n>> Final Result Set (%zu rows):\n\n", rs->count);
-            for (size_t r = 0; r < rs->count; r++) {
-                printf("    ");
-                for (size_t p = 0; p < rs->num_columns; p++) {
-                    printf("%s: ", rs->column_names[p]);
-                    sql_node_t *val = rs->rows[r].columns[p];
-
-                    if (val->is_null) printf("NULL");
-                    else switch (val->data_type) {
-                        case SQL_TYPE_INT:      printf("%d", val->value.int_value); break;
-                        case SQL_TYPE_DOUBLE:   printf("%.2f", val->value.double_value); break;
-                        case SQL_TYPE_STRING:   printf("'%s'", val->value.string_value); break;
-                        default: printf("???");
-                    }
-                    if (p < rs->num_columns - 1) printf(" | ");
-                }
-                printf("\n");
+            sql_result_set_t *rs = sql_vm_execute(vm, query_ast);
+            if (!rs) {
+                printf("\nEXPLAIN failed.\n");
+                sql_ctx_print_messages(&context);
             }
-        } else {
-            printf("\nQuery failed or returned empty dataset.\n");
-            sql_ctx_print_messages(&context);
+            aml_pool_destroy(pool);
         }
 
-        printf("\n");
-        aml_pool_destroy(pool);
+        // --- EXECUTION PHASE ---
+        {
+            aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
+            sql_ctx_t context = {0};
+            context.pool = pool;
+            register_ctx(&context);
+
+            sql_vm_t *vm = sql_vm_init(&context, my_fetch_table, my_resolve_col, NULL);
+
+            size_t token_count;
+            sql_token_t **tokens = sql_tokenize(&context, queries[i], &token_count);
+            sql_select_t *query_ast = sql_parse_query(&context, tokens, token_count);
+
+            sql_result_set_t *rs = sql_vm_execute(vm, query_ast);
+
+            if (rs) {
+                printf("\n>> Final Result Set (%zu rows):\n\n", rs->count);
+                for (size_t r = 0; r < rs->count; r++) {
+                    printf("    ");
+                    for (size_t p = 0; p < rs->num_columns; p++) {
+                        printf("%s: ", rs->column_names[p]);
+                        sql_node_t *val = rs->rows[r].columns[p];
+
+                        if (val->is_null) printf("NULL");
+                        else switch (val->data_type) {
+                            case SQL_TYPE_INT:      printf("%d", val->value.int_value); break;
+                            case SQL_TYPE_DOUBLE:   printf("%.2f", val->value.double_value); break;
+                            case SQL_TYPE_STRING:   printf("'%s'", val->value.string_value); break;
+                            default: printf("???");
+                        }
+                        if (p < rs->num_columns - 1) printf(" | ");
+                    }
+                    printf("\n");
+                }
+            } else {
+                printf("\nQuery failed or returned empty dataset.\n");
+                sql_ctx_print_messages(&context);
+            }
+            aml_pool_destroy(pool);
+        }
     }
 
     return 0;

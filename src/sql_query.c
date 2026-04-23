@@ -13,7 +13,6 @@ static inline bool is_context_error(sql_ctx_t *context) {
     return context->errors != NULL;
 }
 
-// Forward declaration for recursive joins
 static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
 
 static sql_ast_node_t *parse_projection_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
@@ -198,14 +197,17 @@ static sql_order_by_t *parse_order_by_list(sql_ctx_t *context, sql_token_t **tok
     return head;
 }
 
-// The Internal Recursive Parser
 static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count) {
     if (*pos >= token_count) return NULL;
 
     sql_select_t *query = aml_pool_zalloc(context->pool, sizeof(sql_select_t));
 
-    // --- NEW: Parse CTE WITH clause ---
-    if (tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "WITH") == 0) {
+    if (tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "EXPLAIN") == 0) {
+        query->is_explain = true;
+        (*pos)++;
+    }
+
+    if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "WITH") == 0) {
         (*pos)++;
         sql_cte_t *cte_head = NULL, *cte_tail = NULL;
 
@@ -246,21 +248,20 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
             else { cte_tail->next = cte; cte_tail = cte; }
 
             if (*pos < token_count && tokens[*pos]->type == SQL_COMMA) {
-                (*pos)++; // Move to next CTE
+                (*pos)++;
             } else {
-                break; // Exit loop, must be SELECT next
+                break;
             }
         }
         query->ctes = cte_head;
     }
 
     if (*pos >= token_count || tokens[*pos]->type != SQL_KEYWORD || strcasecmp(tokens[*pos]->token, "SELECT") != 0) {
-        sql_ctx_error(context, "Query must start with SELECT (or WITH)");
+        sql_ctx_error(context, "Query must start with SELECT (or EXPLAIN/WITH)");
         return NULL;
     }
-    (*pos)++; // Consume SELECT
+    (*pos)++;
 
-    // 1. Projections
     if (*pos < token_count && tokens[*pos]->type == SQL_OPERATOR && strcmp(tokens[*pos]->token, "*") == 0) {
         query->is_star = true;
         (*pos)++;
@@ -269,16 +270,15 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
         query->columns = parse_projection_list(context, tokens, pos, token_count);
     }
 
-    // 2. FROM Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "FROM") == 0) {
         (*pos)++;
 
         if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
-            (*pos)++; // Consume '('
+            (*pos)++;
             query->subquery = parse_select_query(context, tokens, pos, token_count);
 
             if (*pos < token_count && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-                (*pos)++; // Consume ')'
+                (*pos)++;
             } else {
                 sql_ctx_error(context, "Expected closing parenthesis after FROM subquery");
                 return NULL;
@@ -305,16 +305,13 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
         }
     }
 
-    // 3. JOIN Clauses
     query->joins = parse_join_list(context, tokens, pos, token_count);
 
-    // 4. WHERE Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "WHERE") == 0) {
         (*pos)++;
         query->where_clause = parse_expression(context, tokens, pos, token_count);
     }
 
-    // 5. GROUP BY Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "GROUP") == 0) {
         (*pos)++;
         if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "BY") == 0) {
@@ -326,13 +323,11 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
         }
     }
 
-    // 6. HAVING Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "HAVING") == 0) {
         (*pos)++;
         query->having_clause = parse_expression(context, tokens, pos, token_count);
     }
 
-    // 7. ORDER BY Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "ORDER") == 0) {
         (*pos)++;
         if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "BY") == 0) {
@@ -344,13 +339,11 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
         }
     }
 
-    // 8. LIMIT Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "LIMIT") == 0) {
         (*pos)++;
         query->limit = parse_expression(context, tokens, pos, token_count);
     }
 
-    // 9. OFFSET Clause
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "OFFSET") == 0) {
         (*pos)++;
         query->offset = parse_expression(context, tokens, pos, token_count);
@@ -359,7 +352,6 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
     return query;
 }
 
-// The Public API Parser
 sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t token_count) {
     if (token_count == 0) return NULL;
     size_t pos = 0;
@@ -376,14 +368,16 @@ sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t t
     return query;
 }
 
-
 // --- PRINT & TO_STRING ---
-
 void sql_print_query(sql_select_t *query, int depth) {
     if (!query) return;
 
     for(int i=0; i<depth; i++) printf("  ");
     printf("--- SQL QUERY AST ---\n");
+    if (query->is_explain) {
+        for(int i=0; i<depth; i++) printf("  ");
+        printf("[EXPLAIN MODE ENABLED]\n");
+    }
 
     if (query->ctes) {
         for(int i=0; i<depth; i++) printf("  ");
@@ -456,13 +450,11 @@ void sql_print_query(sql_select_t *query, int depth) {
     }
 }
 
-static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node);
-
 static char *ast_list_to_string(sql_ctx_t *ctx, sql_ast_node_t *head) {
     char *result = aml_pool_strdup(ctx->pool, "");
     sql_ast_node_t *current = head;
     while (current) {
-        char *expr_str = ast_to_string(ctx, current);
+        char *expr_str = sql_ast_to_string(ctx, current);
         if (strlen(result) > 0) {
             result = aml_pool_strdupf(ctx->pool, "%s, %s", result, expr_str);
         } else {
@@ -473,7 +465,8 @@ static char *ast_list_to_string(sql_ctx_t *ctx, sql_ast_node_t *head) {
     return result;
 }
 
-static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
+// --- RENAMED TO BE PUBLIC: sql_ast_to_string ---
+char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
     if (!node) return aml_pool_strdup(ctx->pool, "");
 
     switch (node->type) {
@@ -492,7 +485,7 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             return aml_pool_strdupf(ctx->pool, "'%s'", node->value);
         case SQL_FUNCTION_LITERAL: return aml_pool_strdup(ctx->pool, node->value);
         case SQL_NOT: {
-            char *inner = ast_to_string(ctx, node->left);
+            char *inner = sql_ast_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "(NOT %s)", inner);
         }
         case SQL_AND:
@@ -500,32 +493,32 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
         case SQL_OPERATOR:
         case SQL_COMPARISON: {
             if (strcasecmp(node->value, "BETWEEN") == 0 || strcasecmp(node->value, "NOT BETWEEN") == 0) {
-                char *left = ast_to_string(ctx, node->left);
-                char *lower = ast_to_string(ctx, node->right->left);
-                char *upper = ast_to_string(ctx, node->right->right);
+                char *left = sql_ast_to_string(ctx, node->left);
+                char *lower = sql_ast_to_string(ctx, node->right->left);
+                char *upper = sql_ast_to_string(ctx, node->right->right);
                 return aml_pool_strdupf(ctx->pool, "(%s %s %s AND %s)", left, node->value, lower, upper);
             }
             if (strncasecmp(node->value, "IS", 2) == 0) {
-                char *left_str = ast_to_string(ctx, node->left);
+                char *left_str = sql_ast_to_string(ctx, node->left);
                 if (node->right) {
-                    char *right_str = ast_to_string(ctx, node->right);
+                    char *right_str = sql_ast_to_string(ctx, node->right);
                     return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left_str, node->value, right_str);
                 } else {
                     return aml_pool_strdupf(ctx->pool, "(%s %s)", left_str, node->value);
                 }
             }
             if (strcasecmp(node->value, "IN") == 0 || strcasecmp(node->value, "NOT IN") == 0) {
-                char *left = ast_to_string(ctx, node->left);
-                char *list = ast_to_string(ctx, node->right);
+                char *left = sql_ast_to_string(ctx, node->left);
+                char *list = sql_ast_to_string(ctx, node->right);
                 return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left, node->value, list);
             }
             if (node->left && node->right) {
-                char *left = ast_to_string(ctx, node->left);
-                char *right = ast_to_string(ctx, node->right);
+                char *left = sql_ast_to_string(ctx, node->left);
+                char *right = sql_ast_to_string(ctx, node->right);
                 return aml_pool_strdupf(ctx->pool, "(%s %s %s)", left, node->value, right);
             }
             if (node->left) {
-                return aml_pool_strdupf(ctx->pool, "%s%s", node->value, ast_to_string(ctx, node->left));
+                return aml_pool_strdupf(ctx->pool, "%s%s", node->value, sql_ast_to_string(ctx, node->left));
             }
             break;
         }
@@ -535,11 +528,11 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
                 sql_ast_node_t *curr = node->left;
                 while (curr) {
                     if (strcasecmp(curr->value, "WHEN") == 0) {
-                        char *cond = ast_to_string(ctx, curr->left);
-                        char *val = ast_to_string(ctx, curr->right);
+                        char *cond = sql_ast_to_string(ctx, curr->left);
+                        char *val = sql_ast_to_string(ctx, curr->right);
                         res = aml_pool_strdupf(ctx->pool, "%s WHEN %s THEN %s", res, cond, val);
                     } else if (strcasecmp(curr->value, "ELSE") == 0) {
-                        char *val = ast_to_string(ctx, curr->left);
+                        char *val = sql_ast_to_string(ctx, curr->left);
                         res = aml_pool_strdupf(ctx->pool, "%s ELSE %s", res, val);
                     }
                     curr = curr->next;
@@ -548,17 +541,17 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             }
             if (node->left && node->left->type == SQL_KEYWORD && strcasecmp(node->left->value, "FROM") == 0) {
                 char *field = node->left->left->value;
-                char *source = ast_to_string(ctx, node->left->right);
+                char *source = sql_ast_to_string(ctx, node->left->right);
                 return aml_pool_strdupf(ctx->pool, "EXTRACT(%s FROM %s)", field, source);
             }
             if (strcasecmp(node->value, "POSITION") == 0 && node->left && node->left->next) {
-                char *substr = ast_to_string(ctx, node->left);
-                char *str = ast_to_string(ctx, node->left->next);
+                char *substr = sql_ast_to_string(ctx, node->left);
+                char *str = sql_ast_to_string(ctx, node->left->next);
                 return aml_pool_strdupf(ctx->pool, "POSITION(%s IN %s)", substr, str);
             }
             if (strcasecmp(node->value, "CAST") == 0 && node->left && node->left->next && node->left->next->next) {
-                char *expr = ast_to_string(ctx, node->left);
-                char *type_str = ast_to_string(ctx, node->left->next->next);
+                char *expr = sql_ast_to_string(ctx, node->left);
+                char *type_str = sql_ast_to_string(ctx, node->left->next->next);
                 return aml_pool_strdupf(ctx->pool, "CAST(%s AS %s)", expr, type_str);
             }
             char *args = ast_list_to_string(ctx, node->left);
@@ -578,9 +571,12 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
 
     char *sql = aml_pool_strdup(ctx->pool, "");
 
-    // --- NEW: Add WITH block to string ---
+    if (query->is_explain) {
+        sql = aml_pool_strdupf(ctx->pool, "EXPLAIN ");
+    }
+
     if (query->ctes) {
-        sql = aml_pool_strdupf(ctx->pool, "WITH ");
+        sql = aml_pool_strdupf(ctx->pool, "%sWITH ", sql);
         sql_cte_t *cte = query->ctes;
         while (cte) {
             char *cte_sql = sql_query_to_string(ctx, cte->query);
@@ -591,13 +587,12 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
 
     sql = aml_pool_strdupf(ctx->pool, "%sSELECT ", sql);
 
-    // 1. Projections
     if (query->is_star) {
         sql = aml_pool_strdupf(ctx->pool, "%s*", sql);
     } else {
         sql_ast_node_t *col = query->columns;
         while (col) {
-            char *expr_str = ast_to_string(ctx, col);
+            char *expr_str = sql_ast_to_string(ctx, col);
             if (col->alias) {
                 sql = aml_pool_strdupf(ctx->pool, "%s%s AS %s", sql, expr_str, col->alias);
             } else {
@@ -609,7 +604,6 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
         }
     }
 
-    // 2. FROM --- Support Subqueries! ---
     if (query->subquery) {
         char *sub_str = sql_query_to_string(ctx, query->subquery);
         sql = aml_pool_strdupf(ctx->pool, "%s FROM (%s)", sql, sub_str);
@@ -623,7 +617,6 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
         }
     }
 
-    // 3. JOINs --- Support Subqueries! ---
     if (query->joins) {
         sql_join_t *j = query->joins;
         while (j) {
@@ -642,37 +635,33 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
                 sql = aml_pool_strdupf(ctx->pool, "%s AS %s", sql, j->alias);
             }
 
-            char *on_str = ast_to_string(ctx, j->on_condition);
+            char *on_str = sql_ast_to_string(ctx, j->on_condition);
             sql = aml_pool_strdupf(ctx->pool, "%s ON %s", sql, on_str);
 
             j = j->next;
         }
     }
 
-    // 4. WHERE
     if (query->where_clause) {
-        char *where_str = ast_to_string(ctx, query->where_clause);
+        char *where_str = sql_ast_to_string(ctx, query->where_clause);
         sql = aml_pool_strdupf(ctx->pool, "%s WHERE %s", sql, where_str);
     }
 
-    // 5. GROUP BY
     if (query->group_by) {
         char *gb_str = ast_list_to_string(ctx, query->group_by);
         sql = aml_pool_strdupf(ctx->pool, "%s GROUP BY %s", sql, gb_str);
     }
 
-    // 6. HAVING
     if (query->having_clause) {
-        char *having_str = ast_to_string(ctx, query->having_clause);
+        char *having_str = sql_ast_to_string(ctx, query->having_clause);
         sql = aml_pool_strdupf(ctx->pool, "%s HAVING %s", sql, having_str);
     }
 
-    // 7. ORDER BY
     if (query->order_by) {
         sql = aml_pool_strdupf(ctx->pool, "%s ORDER BY ", sql);
         sql_order_by_t *ob = query->order_by;
         while (ob) {
-            char *expr_str = ast_to_string(ctx, ob->expr);
+            char *expr_str = sql_ast_to_string(ctx, ob->expr);
             sql = aml_pool_strdupf(ctx->pool, "%s%s %s", sql, expr_str, ob->is_desc ? "DESC" : "ASC");
 
             ob = ob->next;
@@ -680,15 +669,13 @@ char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
         }
     }
 
-    // 8. LIMIT
     if (query->limit) {
-        char *limit_str = ast_to_string(ctx, query->limit);
+        char *limit_str = sql_ast_to_string(ctx, query->limit);
         sql = aml_pool_strdupf(ctx->pool, "%s LIMIT %s", sql, limit_str);
     }
 
-    // 9. OFFSET
     if (query->offset) {
-        char *offset_str = ast_to_string(ctx, query->offset);
+        char *offset_str = sql_ast_to_string(ctx, query->offset);
         sql = aml_pool_strdupf(ctx->pool, "%s OFFSET %s", sql, offset_str);
     }
 

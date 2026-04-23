@@ -38,7 +38,7 @@ typedef struct sql_table_request_s {
     // Filters that only apply to this specific table.
     sql_ast_node_t *table_filters;
 
-    // --- NEW: INDEX EXECUTION STATE ---
+    // --- INDEX EXECUTION STATE ---
     struct sql_index_s *index_to_use;
     struct sql_node_s **index_exact_values;
     struct sql_node_s **index_min_values;
@@ -71,7 +71,9 @@ typedef struct {
 } sql_execution_plan_t;
 
 sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast);
-void sql_print_plan(sql_execution_plan_t *plan);
+
+// --- UPDATED: Pass ctx to allow string allocation ---
+void sql_print_plan(sql_ctx_t *ctx, sql_execution_plan_t *plan);
 void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan);
 
 #endif /* _sql_planner_H */

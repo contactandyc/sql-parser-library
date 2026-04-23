@@ -5,6 +5,7 @@
 // Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_planner.h"
+#include "sql-parser-library/sql_vm.h" // For the sql_index_t definition
 #include "a-memory-library/aml_pool.h"
 #include <stdio.h>
 #include <string.h>
@@ -40,11 +41,9 @@ static void add_required_column(plan_table_state_t *state, const char *col_name)
 static void extract_columns_from_ast(sql_ast_node_t *node, plan_table_state_t *states, size_t num_states) {
     if (!node) return;
 
-    // If it's a resolved identifier, we know exactly which table it belongs to!
     if (node->type == SQL_IDENTIFIER && node->column) {
         int idx = node->column->table_index;
         if (idx >= 0 && idx < (int)num_states) {
-            // Use the physical column name from the schema, ignoring whatever prefix the user typed
             add_required_column(&states[idx], node->column->name);
         }
     }
@@ -69,7 +68,6 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
     if (ast->table || ast->subquery) {
         sql_table_request_t *base_req = aml_pool_zalloc(ctx->pool, sizeof(sql_table_request_t));
 
-        // Safely determine the name based on whether it's a physical table or a subquery
         if (ast->table) {
             base_req->table_name = aml_pool_strdup(ctx->pool, ast->table);
         } else if (ast->table_alias) {
@@ -95,10 +93,8 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
 
     sql_join_t *j = ast->joins;
     while (j && num_states < MAX_PLAN_TABLES) {
-        // A. Create the Data Request for the table being joined
         sql_table_request_t *join_req = aml_pool_zalloc(ctx->pool, sizeof(sql_table_request_t));
 
-        // Safely determine the name based on whether it's a physical table or a subquery
         if (j->table) {
             join_req->table_name = aml_pool_strdup(ctx->pool, j->table);
         } else if (j->alias) {
@@ -119,14 +115,11 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
             req_tail = join_req;
         }
 
-        // B. Create the Join Execution Strategy
         sql_join_plan_t *join_plan = aml_pool_zalloc(ctx->pool, sizeof(sql_join_plan_t));
         join_plan->join_type = j->type;
         join_plan->right_table_index = num_states;
-        join_plan->on_condition = j->on_condition; // Attach the ON AST
+        join_plan->on_condition = j->on_condition;
 
-        // Simple heuristic: If the ON condition is purely an '=' comparison,
-        // we can theoretically use a Hash Join. Otherwise, Nested Loop.
         if (j->on_condition && j->on_condition->type == SQL_COMPARISON &&
             strcmp(j->on_condition->value, "=") == 0) {
             join_plan->algorithm = JOIN_ALGO_HASH_JOIN;
@@ -189,17 +182,15 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
 
 // --- PREDICATE PUSHDOWN LOGIC ---
 
-// Scans an AST node to see which tables it depends on.
-// Returns -2 if no tables (constants), -1 if multiple tables, or the table_index if exactly one.
 static void check_table_dependency(sql_ast_node_t *node, int *dep_index) {
     if (!node || *dep_index == -1) return;
 
     if (node->type == SQL_IDENTIFIER && node->column) {
         int idx = node->column->table_index;
         if (*dep_index == -2) {
-            *dep_index = idx; // First table seen
+            *dep_index = idx;
         } else if (*dep_index != idx) {
-            *dep_index = -1;  // Conflict: Multiple tables referenced!
+            *dep_index = -1;
         }
     }
 
@@ -208,12 +199,10 @@ static void check_table_dependency(sql_ast_node_t *node, int *dep_index) {
     check_table_dependency(node->next, dep_index);
 }
 
-// Appends a filter node to a table's local filter chain
 static void append_table_filter(sql_ctx_t *ctx, sql_table_request_t *req, sql_ast_node_t *new_filter) {
     if (!req->table_filters) {
         req->table_filters = new_filter;
     } else {
-        // Create a new AND node to glue the existing filters and the new filter together
         sql_ast_node_t *and_node = aml_pool_zalloc(ctx->pool, sizeof(sql_ast_node_t));
         and_node->type = SQL_AND;
         and_node->value = aml_pool_strdup(ctx->pool, "AND");
@@ -228,44 +217,36 @@ static void append_table_filter(sql_ctx_t *ctx, sql_table_request_t *req, sql_as
     }
 }
 
-// Recursively walks the WHERE clause and fractures it along AND boundaries
-static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan, sql_ast_node_t *node) {
+// FIX: Passed down safe_to_pushdown array to protect outer join filters
+static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan, sql_ast_node_t *node, bool *safe_to_pushdown) {
     if (!node) return NULL;
 
-    // If it's an AND, we can attempt to split the left and right sides independently
     if (node->type == SQL_AND) {
-        node->left = pushdown_node(ctx, plan, node->left);
-        node->right = pushdown_node(ctx, plan, node->right);
+        node->left = pushdown_node(ctx, plan, node->left, safe_to_pushdown);
+        node->right = pushdown_node(ctx, plan, node->right, safe_to_pushdown);
 
-        // If both sides were completely pushed down, this AND node is now empty and can be removed
         if (!node->left && !node->right) return NULL;
-
-        // If only one side was pushed down, return the side that is left over
         if (!node->left) return node->right;
         if (!node->right) return node->left;
 
-        // If neither side could be pushed down, return the AND node fully intact
         return node;
     }
     else {
-        // It's a solid block (like an OR, a COMPARISON, or an IS NULL).
-        // Check its table dependencies.
         int dep = -2;
         check_table_dependency(node, &dep);
 
-        if (dep >= 0) {
-            // It only relies on ONE table! Push it down.
+        // FIX: Ensure the table dependency is actually allowed to evaluate filters locally!
+        if (dep >= 0 && safe_to_pushdown[dep]) {
             sql_table_request_t *req = plan->table_requests;
             while (req) {
                 if (req->table_index == dep) {
                     append_table_filter(ctx, req, node);
-                    return NULL; // Return NULL to remove it from the global filters
+                    return NULL;
                 }
                 req = req->next;
             }
         }
 
-        // It relies on multiple tables (or no tables). Keep it global.
         return node;
     }
 }
@@ -273,14 +254,31 @@ static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan,
 void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     if (!plan || !plan->global_filters) return;
 
-    // pushdown_node will fracture the tree and return whatever couldn't be pushed down
-    plan->global_filters = pushdown_node(ctx, plan, plan->global_filters);
+    // --- FIX: Outer Join Protection Matrix ---
+    bool safe_to_pushdown[MAX_PLAN_TABLES];
+    for (int i = 0; i < MAX_PLAN_TABLES; i++) safe_to_pushdown[i] = true;
+
+    sql_join_plan_t *jp = plan->joins;
+    while (jp) {
+        // If a table is on the right side of a LEFT/FULL join, it might be padded with NULLs.
+        // We cannot evaluate WHERE clauses early on this table.
+        if (jp->join_type == JOIN_LEFT || jp->join_type == JOIN_FULL) {
+            safe_to_pushdown[jp->right_table_index] = false;
+        }
+        // If it's a RIGHT join, the left side (all tables before it) are nullable!
+        if (jp->join_type == JOIN_RIGHT || jp->join_type == JOIN_FULL) {
+            for (int i = 0; i < jp->right_table_index; i++) {
+                safe_to_pushdown[i] = false;
+            }
+        }
+        jp = jp->next;
+    }
+
+    plan->global_filters = pushdown_node(ctx, plan, plan->global_filters, safe_to_pushdown);
 }
 
-void sql_print_plan(sql_execution_plan_t *plan) {
+void sql_print_plan(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     if (!plan) return;
-
-    printf("\n=== EXECUTION PLAN ===\n");
 
     printf("--- 1. DATA ACCESS ---\n");
     sql_table_request_t *req = plan->table_requests;
@@ -288,7 +286,15 @@ void sql_print_plan(sql_execution_plan_t *plan) {
         printf("TABLE SCAN [Index %d]: %s", req->table_index, req->table_name);
         if (req->alias) printf(" AS %s", req->alias);
 
-        printf("\n  Strategy: %s\n", req->scan_strategy == SCAN_FULL_TABLE ? "Full Table Scan" : "Index Scan");
+        if (req->scan_strategy == SCAN_INDEX_LOOKUP && req->index_to_use) {
+            printf("\n  Strategy: %s Index Lookup on (", req->index_to_use->type == INDEX_TYPE_BTREE ? "B-Tree" : "Hash");
+            for(size_t c=0; c < req->num_index_values; c++) {
+                printf("%s%s", req->index_to_use->column_names[c], c < req->num_index_values - 1 ? ", " : "");
+            }
+            printf(")\n");
+        } else {
+            printf("\n  Strategy: Full Table Scan\n");
+        }
 
         printf("  Columns:  ");
         if (req->needs_all_columns) {
@@ -303,8 +309,8 @@ void sql_print_plan(sql_execution_plan_t *plan) {
         }
 
         if (req->table_filters) {
-            printf("  Local Filters (Pushed Down):\n");
-            print_ast(req->table_filters, 2);
+            char *filter_str = sql_ast_to_string(ctx, req->table_filters);
+            printf("  Local Filters (Pushed Down): %s\n", filter_str);
         }
 
         req = req->next;
@@ -321,15 +327,18 @@ void sql_print_plan(sql_execution_plan_t *plan) {
             const char *algo_str = jp->algorithm == JOIN_ALGO_HASH_JOIN ? "Hash Join" : "Nested Loop";
 
             printf("JOIN to [Index %d] (%s via %s)\n", jp->right_table_index, type_str, algo_str);
+
+            if (jp->on_condition) {
+                char *on_str = sql_ast_to_string(ctx, jp->on_condition);
+                printf("  Condition: %s\n", on_str);
+            }
             jp = jp->next;
         }
     }
 
     if (plan->global_filters) {
         printf("\n--- 3. GLOBAL FILTERS ---\n");
-        printf("Residual filters applied after joins:\n");
-        print_ast(plan->global_filters, 1);
+        char *global_str = sql_ast_to_string(ctx, plan->global_filters);
+        printf("Residual filters applied after joins: %s\n", global_str);
     }
-
-    printf("======================\n\n");
 }

@@ -25,7 +25,7 @@ typedef struct {
 } vm_catalog_state_t;
 
 // Forward declaration for recursion
-static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes);
+static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes, bool explain_mode);
 
 // --- VIRTUAL TABLE ROUTER ---
 static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
@@ -194,7 +194,7 @@ static bool node_depends_on_table(sql_node_t *node, int t_idx) {
     return false;
 }
 
-// --- NEW: INDEX HARVESTER ---
+// --- INDEX HARVESTER ---
 static void harvest_index_conditions(sql_ctx_t *ctx, sql_node_t *filter_node, int table_idx, const char *col_name,
                                      sql_node_t **out_exact, sql_node_t **out_min, sql_node_t **out_max) {
     if (!filter_node) return;
@@ -296,7 +296,7 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                          int num_datasets, int step, int *exec_order, void **current_row_set,
                          sql_dataset_t **datasets, sql_table_request_t **req_array,
                          sql_node_t **local_filters, sql_node_t **step_join_conds,
-                         sql_join_type_t *step_join_types, // --- NEW: JOIN TYPE PROPAGATION ---
+                         sql_join_type_t *step_join_types,
                          sql_node_t *global_filter, macro_map_t **group_map_root,
                          group_node_t **global_group, sql_result_set_t *rs,
                          macro_map_t **join_maps, sql_node_t **join_probe_exprs) {
@@ -368,7 +368,7 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     // --- HASH JOIN PROBE PHASE ---
     if (join_maps && join_maps[step]) {
         sql_node_t *probe_key = sql_eval(ctx, join_probe_exprs[step]);
-        bool matched_any = false; // --- FIX: Track if any rows matched ---
+        bool matched_any = false;
 
         if (probe_key && !probe_key->is_null) {
             group_node_t lookup = {0};
@@ -388,7 +388,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
             }
         }
 
-        // --- FIX: NULL padding for LEFT JOIN ---
         if (!matched_any && step_join_types[step] == JOIN_LEFT) {
             current_row_set[t_idx] = NULL;
             execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
@@ -402,7 +401,7 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     sql_dataset_t *ds = datasets[t_idx];
     sql_node_t *local_filter = local_filters[t_idx];
     sql_node_t *join_cond = step_join_conds[step];
-    bool matched_any = false; // --- FIX: Track if any rows matched ---
+    bool matched_any = false;
 
     // --- INDEX LOOKUP FAST PATH ---
     if (req && req->scan_strategy == SCAN_INDEX_LOOKUP && req->index_to_use) {
@@ -448,7 +447,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                                 group_map_root, global_group, rs, join_maps, join_probe_exprs);
         }
 
-        // --- FIX: NULL padding for LEFT JOIN ---
         if (!matched_any && step_join_types[step] == JOIN_LEFT) {
             current_row_set[t_idx] = NULL;
             execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
@@ -492,7 +490,6 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                             group_map_root, global_group, rs, join_maps, join_probe_exprs);
     }
 
-    // --- FIX: NULL padding for LEFT JOIN ---
     if (!matched_any && step_join_types[step] == JOIN_LEFT) {
         current_row_set[t_idx] = NULL;
         execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
@@ -502,12 +499,14 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
 }
 
 // --- VM EXECUTION ---
-static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes) {
+static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes, bool explain_mode) {
     if (!ast) return NULL;
     sql_ctx_t *ctx = vm->ctx;
 
-    VM_DEBUG("\n========================================\n");
-    VM_DEBUG("[VM-INIT] Executing Sub-Tree: %s\n", forced_alias);
+    if (!explain_mode) {
+        VM_DEBUG("\n========================================\n");
+        VM_DEBUG("[VM-INIT] Executing Sub-Tree: %s\n", forced_alias);
+    }
 
     // --- 1. EAGER-EVALUATE COMMON TABLE EXPRESSIONS (WITH) ---
     size_t num_local_ctes = 0;
@@ -524,8 +523,8 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         size_t cte_idx = num_parent_ctes;
         cte = ast->ctes;
         while(cte) {
-            VM_DEBUG("[VM-INIT] Evaluating CTE '%s'\n", cte->alias);
-            sql_dataset_t *cte_ds = internal_execute(vm, cte->query, cte->alias, available_ctes, cte_idx);
+            if (!explain_mode) VM_DEBUG("[VM-INIT] Evaluating CTE '%s'\n", cte->alias);
+            sql_dataset_t *cte_ds = internal_execute(vm, cte->query, cte->alias, available_ctes, cte_idx, explain_mode);
             if (!cte_ds) return NULL;
             cte_ds->table_name = aml_pool_strdup(ctx->pool, cte->alias);
             available_ctes[cte_idx++] = cte_ds;
@@ -538,7 +537,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     // --- BASE TABLE FETCHING ---
     if (ast->subquery) {
-        datasets[num_datasets] = internal_execute(vm, ast->subquery, ast->table_alias ? ast->table_alias : "subquery", available_ctes, num_available_ctes);
+        datasets[num_datasets] = internal_execute(vm, ast->subquery, ast->table_alias ? ast->table_alias : "subquery", available_ctes, num_available_ctes, explain_mode);
         datasets[num_datasets]->table_name = "subquery";
         num_datasets++;
     } else if (ast->table) {
@@ -551,7 +550,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         }
 
         if (matched_cte) {
-            VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", ast->table);
+            if (!explain_mode) VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", ast->table);
             datasets[num_datasets] = aml_pool_alloc(ctx->pool, sizeof(sql_dataset_t));
             *datasets[num_datasets] = *matched_cte;
             datasets[num_datasets]->alias = ast->table_alias ? ast->table_alias : matched_cte->alias;
@@ -570,7 +569,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     sql_join_t *j = ast->joins;
     while (j) {
         if (j->subquery) {
-            datasets[num_datasets] = internal_execute(vm, j->subquery, j->alias ? j->alias : "subquery", available_ctes, num_available_ctes);
+            datasets[num_datasets] = internal_execute(vm, j->subquery, j->alias ? j->alias : "subquery", available_ctes, num_available_ctes, explain_mode);
             datasets[num_datasets]->table_name = "subquery";
             num_datasets++;
         } else if (j->table) {
@@ -583,7 +582,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
             }
 
             if (matched_cte) {
-                VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", j->table);
+                if (!explain_mode) VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", j->table);
                 datasets[num_datasets] = aml_pool_alloc(ctx->pool, sizeof(sql_dataset_t));
                 *datasets[num_datasets] = *matched_cte;
                 datasets[num_datasets]->alias = j->alias ? j->alias : matched_cte->alias;
@@ -624,7 +623,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     for (int i = 0; i < num_datasets; i++) exec_order[i] = i;
 
     // --- 1. UNIVERSAL JOIN REORDERING OPTIMIZER ---
-    VM_DEBUG("[VM-OPT] Running Universal Reordering Pass...\n");
+    if (!explain_mode) VM_DEBUG("[VM-OPT] Running Universal Reordering Pass...\n");
     bool changed = true;
     while (changed) {
         changed = false;
@@ -632,7 +631,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         while (jp) {
             int r_table = jp->right_table_index;
 
-            // --- FIX: Only allow INNER joins to be reordered. ---
             if (jp->join_type == JOIN_INNER && jp->on_condition && jp->on_condition->left && jp->on_condition->right) {
                 sql_node_t *l_cond = sql_compile_expression(ctx, jp->on_condition->left);
                 sql_node_t *r_cond = sql_compile_expression(ctx, jp->on_condition->right);
@@ -653,7 +651,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                         long score_L = (datasets[l_table]->mode == DS_MODE_STREAMING ? 1000000000 : 0) + datasets[l_table]->count;
                         long score_R = (datasets[r_table]->mode == DS_MODE_STREAMING ? 1000000000 : 0) + datasets[r_table]->count;
                         if (score_L < score_R) {
-                            VM_DEBUG("  -> SWAP: Bubbling massive table '%s' to outer loop, tiny '%s' to inner loop.\n",
+                            if (!explain_mode) VM_DEBUG("  -> SWAP: Bubbling massive table '%s' to outer loop, tiny '%s' to inner loop.\n",
                                      datasets[r_table]->alias, datasets[l_table]->alias);
                             exec_order[idx_L] = r_table;
                             exec_order[idx_R] = l_table;
@@ -668,9 +666,8 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     // --- 2. DYNAMIC CONDITION SCHEDULER ---
     sql_node_t **step_join_conds = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
-    sql_join_type_t *step_join_types = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_join_type_t)); // --- NEW: Track the join type ---
+    sql_join_type_t *step_join_types = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_join_type_t));
 
-    // Default to INNER
     for(size_t i = 0; i < num_datasets; i++) step_join_types[i] = JOIN_INNER;
 
     sql_join_plan_t *jp_pass = plan->joins;
@@ -682,10 +679,10 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                 if (i > max_step) max_step = i;
             }
         }
-        VM_DEBUG("[VM-MAP] Join condition assigned to Execution Step %d (Table '%s')\n",
+        if (!explain_mode) VM_DEBUG("[VM-MAP] Join condition assigned to Execution Step %d (Table '%s')\n",
                  max_step, datasets[exec_order[max_step]]->alias);
         step_join_conds[max_step] = compiled_cond;
-        step_join_types[max_step] = jp_pass->join_type; // Capture the type
+        step_join_types[max_step] = jp_pass->join_type;
         jp_pass = jp_pass->next;
     }
 
@@ -702,6 +699,40 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
         req = req->next;
     }
+
+    sql_compiled_query_t *compiled = sql_compile_query(ctx, ast);
+
+    // --- EXPLAIN MODE INTERCEPT ---
+    if (explain_mode) {
+        printf("\n=== EXPLAIN PLAN FOR: %s ===\n", forced_alias);
+        sql_print_plan(ctx, plan);
+        printf("\n--- JOIN EXECUTION ORDER ---\n");
+        for (int i = 0; i < num_datasets; i++) {
+            printf("%d. %s (%s)\n", i + 1, datasets[exec_order[i]]->table_name, datasets[exec_order[i]]->alias);
+        }
+        printf("===============================\n");
+
+        ctx->catalog_state = old_catalog_state;
+        ctx->row = old_row;
+        ctx->current_agg_states = old_agg_states;
+
+        sql_dataset_t *out_ds = aml_pool_zalloc(ctx->pool, sizeof(sql_dataset_t));
+        out_ds->is_virtual = true;
+        out_ds->mode = DS_MODE_MATERIALIZED;
+        out_ds->rs = sql_result_set_init(ctx->pool, 0, NULL, 0, NULL);
+        out_ds->alias = forced_alias;
+
+        // --- FIX: POPULATE EXPLAIN SCHEMA METADATA ---
+        out_ds->num_columns = compiled->num_projections;
+        out_ds->column_names = compiled->display_names;
+        out_ds->column_types = aml_pool_alloc(ctx->pool, out_ds->num_columns * sizeof(sql_data_type_t));
+        for (size_t c = 0; c < out_ds->num_columns; c++) {
+            out_ds->column_types[c] = compiled->projections[c]->data_type;
+        }
+
+        return out_ds;
+    }
+
 
     // --- 3. HASH JOIN BUILD PHASE ---
     macro_map_t **join_maps = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(macro_map_t *));
@@ -791,7 +822,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         hj_pass = hj_pass->next;
     }
 
-    sql_compiled_query_t *compiled = sql_compile_query(ctx, ast);
     sql_node_t *global_filter = sql_compile_expression(ctx, plan->global_filters);
 
     // --- LAUNCH CORE EXECUTION ---
@@ -890,7 +920,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 }
 
 sql_result_set_t *sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
-    sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results", NULL, 0);
+    sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results", NULL, 0, ast->is_explain);
     if (!final_ds || !final_ds->is_virtual) return NULL;
     return final_ds->rs;
 }
