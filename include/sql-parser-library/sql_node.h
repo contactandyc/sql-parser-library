@@ -82,7 +82,6 @@ struct sql_node_s {
         time_t epoch;  // for date time
         void *custom;  // for custom data types (typically setup when func is assigned)
     } value;
-
     sql_node_t **parameters;
     size_t num_parameters;
 };

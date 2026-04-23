@@ -86,11 +86,13 @@ add_library(sql_parser_library_debug STATIC
   src/sql_ast.c
   src/sql_ast_to_node.c
   src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
   src/sql_planner.c
   src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -159,11 +161,13 @@ add_library(sql_parser_library_memory STATIC
   src/sql_ast.c
   src/sql_ast_to_node.c
   src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
   src/sql_planner.c
   src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -235,11 +239,13 @@ add_library(sql_parser_library_static STATIC
   src/sql_ast.c
   src/sql_ast_to_node.c
   src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
   src/sql_planner.c
   src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
@@ -308,11 +314,13 @@ add_library(sql_parser_library_shared SHARED
   src/sql_ast.c
   src/sql_ast_to_node.c
   src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
   src/sql_planner.c
   src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
   src/utils/date_utils.c
   src/utils/named_pointer.c
