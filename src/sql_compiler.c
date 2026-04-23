@@ -1,11 +1,9 @@
 // SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
 // SPDX-FileCopyrightText: 2024–2025 Knode.ai
 // SPDX-License-Identifier: Apache-2.0
-//
-// Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_compiler.h"
-#include "sql-parser-library/sql_ast.h" // Needed for convert_ast_to_node
+#include "sql-parser-library/sql_ast.h"
 #include <string.h>
 
 sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
@@ -17,12 +15,28 @@ sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
     return node;
 }
 
+// Recursively walks the compiled expression trees to assign aggregate indexes
+static void collect_aggregates(sql_node_t *node, sql_node_t **agg_array, size_t *count) {
+    if (!node) return;
+
+    if (node->spec && node->spec->is_aggregate) {
+        node->agg_index = *count;
+        agg_array[*count] = node;
+        (*count)++;
+        return;
+    }
+
+    for (size_t i = 0; i < node->num_parameters; i++) {
+        collect_aggregates(node->parameters[i], agg_array, count);
+    }
+}
+
 sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
     if (!ast) return NULL;
 
     sql_compiled_query_t *compiled = aml_pool_zalloc(ctx->pool, sizeof(sql_compiled_query_t));
 
-    // 1. Compile Projections (SELECT)
+    // 1. Projections
     size_t num_projs = 0;
     sql_ast_node_t *curr_col = ast->columns;
     while (curr_col) { num_projs++; curr_col = curr_col->next; }
@@ -40,7 +54,22 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // 2. Compile Sorting (ORDER BY)
+    // 2. Group By
+    size_t num_groups = 0;
+    sql_ast_node_t *curr_gb = ast->group_by;
+    while (curr_gb) { num_groups++; curr_gb = curr_gb->next; }
+
+    if (num_groups > 0) {
+        compiled->num_group_keys = num_groups;
+        compiled->group_exprs = aml_pool_alloc(ctx->pool, num_groups * sizeof(sql_node_t *));
+        curr_gb = ast->group_by;
+        for (size_t i = 0; i < num_groups; i++) {
+            compiled->group_exprs[i] = sql_compile_expression(ctx, curr_gb);
+            curr_gb = curr_gb->next;
+        }
+    }
+
+    // 3. Sorting
     size_t num_sorts = 0;
     sql_order_by_t *curr_ob = ast->order_by;
     while (curr_ob) { num_sorts++; curr_ob = curr_ob->next; }
@@ -53,9 +82,27 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         curr_ob = ast->order_by;
         for (size_t i = 0; i < num_sorts; i++) {
             compiled->sort_exprs[i] = sql_compile_expression(ctx, curr_ob->expr);
-            // Default to 1 (ASC) for now, update to use parser logic when available
             compiled->sort_directions[i] = curr_ob->is_desc ? -1 : 1;
             curr_ob = curr_ob->next;
+        }
+    }
+
+    // 4. Map the Aggregates
+    sql_node_t *agg_buffer[128]; // Safe upper bound for a single query
+    size_t agg_count = 0;
+
+    for (size_t i = 0; i < compiled->num_projections; i++) {
+        collect_aggregates(compiled->projections[i], agg_buffer, &agg_count);
+    }
+    for (size_t i = 0; i < compiled->num_sort_keys; i++) {
+        collect_aggregates(compiled->sort_exprs[i], agg_buffer, &agg_count);
+    }
+
+    if (agg_count > 0) {
+        compiled->num_aggregates = agg_count;
+        compiled->agg_nodes = aml_pool_alloc(ctx->pool, agg_count * sizeof(sql_node_t *));
+        for (size_t i = 0; i < agg_count; i++) {
+            compiled->agg_nodes[i] = agg_buffer[i];
         }
     }
 

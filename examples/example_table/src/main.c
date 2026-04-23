@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
 // SPDX-FileCopyrightText: 2024–2025 Knode.ai
 // SPDX-License-Identifier: Apache-2.0
-//
-// Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +9,7 @@
 
 #include "a-json-library/ajson.h"
 #include "a-memory-library/aml_pool.h"
+#include "the-macro-library/macro_map.h"
 
 #include "sql-parser-library/sql_ctx.h"
 #include "sql-parser-library/sql_node.h"
@@ -18,39 +17,20 @@
 #include "sql-parser-library/sql_tokenizer.h"
 #include "sql-parser-library/sql_binder.h"
 #include "sql-parser-library/sql_planner.h"
-#include "sql-parser-library/sql_compiler.h"   // NEW!
-#include "sql-parser-library/sql_result_set.h" // NEW!
+#include "sql-parser-library/sql_compiler.h"
+#include "sql-parser-library/sql_result_set.h"
 #include "sql-parser-library/date_utils.h"
 
 // --- 1. MOCK DATA & CATALOG ---
-// [Keep the same mock data structs, arrays, my_dynamic_catalog, and sql_func_get_data]
-
-typedef struct {
-    int id;
-    const char *name;
-    int age;
-} user_row_t;
-
-typedef struct {
-    int id;
-    int user_id;
-    double total;
-    const char *status;
-} order_row_t;
+typedef struct { int id; const char *name; int age; } user_row_t;
+typedef struct { int id; int user_id; double total; const char *status; } order_row_t;
 
 user_row_t users[] = {
-    {1, "Alice",   25},
-    {2, "Bob",     30},
-    {3, "Charlie", 35},
-    {4, "David",   40}
+    {1, "Alice", 25}, {2, "Bob", 30}, {3, "Charlie", 35}, {4, "David", 40}
 };
-
 order_row_t orders[] = {
-    {101, 1, 250.00, "shipped"},
-    {102, 1, 45.50,  "pending"},
-    {103, 3, 899.99, "shipped"},
-    {104, 4, 12.00,  "shipped"},
-    {105, 1, 950.00, "shipped"}
+    {101, 1, 250.00, "shipped"}, {102, 1, 45.50, "pending"}, {103, 3, 899.99, "shipped"},
+    {104, 4, 12.00, "shipped"}, {105, 1, 950.00, "shipped"}
 };
 
 const size_t num_users = sizeof(users) / sizeof(users[0]);
@@ -90,39 +70,76 @@ sql_ctx_column_t *my_dynamic_catalog(sql_ctx_t *ctx, const char *table_name, con
         if (strcasecmp(column_name, "id") == 0) col->type = SQL_TYPE_INT;
         else if (strcasecmp(column_name, "name") == 0) col->type = SQL_TYPE_STRING;
         else if (strcasecmp(column_name, "age") == 0) col->type = SQL_TYPE_INT;
-        else return NULL;
-        return col;
+        else return NULL; return col;
     } else if (strcasecmp(table_name, "orders") == 0) {
         if (strcasecmp(column_name, "id") == 0) col->type = SQL_TYPE_INT;
         else if (strcasecmp(column_name, "user_id") == 0) col->type = SQL_TYPE_INT;
         else if (strcasecmp(column_name, "total") == 0) col->type = SQL_TYPE_DOUBLE;
         else if (strcasecmp(column_name, "status") == 0) col->type = SQL_TYPE_STRING;
-        else return NULL;
-        return col;
+        else return NULL; return col;
     }
     return NULL;
 }
 
-// --- HELPER FUNCTIONS ---
-sql_table_request_t *get_table_request(sql_execution_plan_t *plan, const char *name) {
-    sql_table_request_t *req = plan->table_requests;
-    while (req) {
-        if (strcasecmp(req->table_name, name) == 0) return req;
-        req = req->next;
+// --- 2. MACRO MAP GROUPING ENGINE ---
+
+typedef struct {
+    macro_map_t link;            // MUST BE FIRST!
+    sql_node_t **group_keys;
+    size_t num_keys;
+
+    void **agg_states;
+    void **first_row_set;        // THE FIX: Snapshot of the raw row pointers
+} group_node_t;
+
+// Need the comparator we used in result_sets
+static int compare_sql_nodes(sql_node_t *a, sql_node_t *b) {
+    if (a->is_null && b->is_null) return 0;
+    if (a->is_null) return -1; if (b->is_null) return 1;
+    if (a->data_type != b->data_type) return a->data_type - b->data_type;
+    switch (a->data_type) {
+        case SQL_TYPE_INT: return (a->value.int_value > b->value.int_value) - (a->value.int_value < b->value.int_value);
+        case SQL_TYPE_DOUBLE: return (a->value.double_value > b->value.double_value) - (a->value.double_value < b->value.double_value);
+        case SQL_TYPE_STRING: return strcmp(a->value.string_value, b->value.string_value);
+        default: return 0;
     }
-    return NULL;
 }
 
+static int group_node_cmp(const group_node_t *a, const group_node_t *b) {
+    for (size_t i = 0; i < a->num_keys; i++) {
+        int cmp = compare_sql_nodes(a->group_keys[i], b->group_keys[i]);
+        if (cmp != 0) return cmp;
+    }
+    return 0;
+}
 
-// --- MAIN PIPELINE ---
+macro_map_insert(group_map_insert, group_node_t, group_node_cmp);
+macro_map_find(group_map_find, group_node_t, group_node_cmp);
+
+// Deep copy evaluated nodes for hash map stability
+sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
+    sql_node_t *dst = aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));
+    dst->data_type = src->data_type;
+    dst->is_null = src->is_null;
+    if (src->is_null) return dst;
+    if (src->data_type == SQL_TYPE_STRING) {
+        dst->value.string_value = aml_pool_strdup(ctx->pool, src->value.string_value);
+    } else {
+        dst->value = src->value;
+    }
+    return dst;
+}
+
+// --- 3. MAIN PIPELINE ---
 
 int main(int argc, char **argv) {
     const char *query_str = (argc >= 2) ? argv[1] :
-        "SELECT u.name AS customer, o.total "
+        "SELECT u.name AS customer, SUM(o.total) AS lifetime_value, AVG(o.total) as avg_order "
         "FROM users u "
         "JOIN orders o ON u.id = o.user_id "
         "WHERE o.status = 'shipped' "
-        "ORDER BY o.total DESC, customer ASC";
+        "GROUP BY customer "
+        "ORDER BY lifetime_value DESC";
 
     printf("Executing Query:\n%s\n\n", query_str);
 
@@ -132,7 +149,7 @@ int main(int argc, char **argv) {
     context.schema_lookup = my_dynamic_catalog;
     register_ctx(&context);
 
-    // 1. Pipeline: Parse -> Bind -> Plan
+    // 1. Pipeline: Parse -> Bind -> Plan -> Compile
     size_t token_count;
     sql_token_t **tokens = sql_tokenize(&context, query_str, &token_count);
     sql_select_t *query_ast = sql_parse_query(&context, tokens, token_count);
@@ -140,24 +157,22 @@ int main(int argc, char **argv) {
     sql_execution_plan_t *plan = sql_plan_query(&context, query_ast);
     sql_pushdown_filters(&context, plan);
 
-    // 2. Compile Everything
     sql_compiled_query_t *compiled = sql_compile_query(&context, query_ast);
 
-    sql_table_request_t *user_req = get_table_request(plan, "users");
-    sql_table_request_t *order_req = get_table_request(plan, "orders");
-
-    sql_node_t *users_local_filter = user_req ? sql_compile_expression(&context, user_req->table_filters) : NULL;
-    sql_node_t *orders_local_filter = order_req ? sql_compile_expression(&context, order_req->table_filters) : NULL;
+    // Quick local filter pointers
+    sql_node_t *users_local_filter = plan->table_requests ? sql_compile_expression(&context, plan->table_requests->table_filters) : NULL;
+    sql_node_t *orders_local_filter = plan->table_requests && plan->table_requests->next ? sql_compile_expression(&context, plan->table_requests->next->table_filters) : NULL;
     sql_node_t *join_on_condition = plan->joins ? sql_compile_expression(&context, plan->joins->on_condition) : NULL;
     sql_node_t *global_filter = sql_compile_expression(&context, plan->global_filters);
 
-    // 3. Initialize Result Set
-    sql_result_set_t *rs = sql_result_set_init(pool,
-                                               compiled->num_projections,
-                                               compiled->num_sort_keys,
-                                               compiled->sort_directions);
+    sql_result_set_t *rs = sql_result_set_init(pool, compiled->num_projections, compiled->num_sort_keys, compiled->sort_directions);
 
-    // 4. Execution Loop
+    // ==========================================
+    // PASS 1: ACCUMULATION
+    // ==========================================
+    macro_map_t *group_map_root = NULL;
+    group_node_t *global_group = NULL;
+
     void *current_row_set[2] = {0};
     context.row = current_row_set;
 
@@ -176,26 +191,105 @@ int main(int argc, char **argv) {
                 sql_node_t *res = sql_eval(&context, orders_local_filter);
                 if (!res || res->is_null || !res->value.bool_value) continue;
             }
-
             if (join_on_condition) {
                 sql_node_t *res = sql_eval(&context, join_on_condition);
                 if (!res || res->is_null || !res->value.bool_value) continue;
             }
-
             if (global_filter) {
                 sql_node_t *res = sql_eval(&context, global_filter);
                 if (!res || res->is_null || !res->value.bool_value) continue;
             }
 
-            // Materialize the row!
-            sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+            group_node_t *active_group = NULL;
+
+            // Route 1: GROUP BY
+            if (compiled->num_group_keys > 0) {
+                group_node_t lookup_key;
+                lookup_key.num_keys = compiled->num_group_keys;
+                lookup_key.group_keys = aml_pool_alloc(pool, compiled->num_group_keys * sizeof(sql_node_t *));
+                for (size_t k = 0; k < compiled->num_group_keys; k++) {
+                    lookup_key.group_keys[k] = sql_eval(&context, compiled->group_exprs[k]);
+                }
+
+                active_group = group_map_find(group_map_root, &lookup_key);
+                if (!active_group) {
+                    active_group = aml_pool_zalloc(pool, sizeof(group_node_t));
+
+                    // --- SNAPSHOT RAW ROW SO NON-AGGREGATE COLUMNS RESOLVE IN PASS 2 ---
+                    active_group->first_row_set = aml_pool_alloc(pool, 2 * sizeof(void *));
+                    active_group->first_row_set[0] = current_row_set[0];
+                    active_group->first_row_set[1] = current_row_set[1];
+
+                    active_group->num_keys = compiled->num_group_keys;
+                    active_group->group_keys = aml_pool_alloc(pool, compiled->num_group_keys * sizeof(sql_node_t *));
+                    for (size_t k = 0; k < compiled->num_group_keys; k++) {
+                        active_group->group_keys[k] = copy_evaluated_node(&context, lookup_key.group_keys[k]);
+                    }
+
+                    if (compiled->num_aggregates > 0) {
+                        active_group->agg_states = aml_pool_alloc(pool, compiled->num_aggregates * sizeof(void *));
+                        for (size_t a = 0; a < compiled->num_aggregates; a++) {
+                            active_group->agg_states[a] = aml_pool_zalloc(pool, compiled->agg_nodes[a]->spec->state_size);
+                            compiled->agg_nodes[a]->spec->agg_init(active_group->agg_states[a]);
+                        }
+                    }
+                    group_map_insert(&group_map_root, active_group);
+                }
+            }
+            // Route 2: Global Aggregates (No GROUP BY)
+            else if (compiled->num_aggregates > 0) {
+                if (!global_group) {
+                    global_group = aml_pool_zalloc(pool, sizeof(group_node_t));
+
+                    global_group->first_row_set = aml_pool_alloc(pool, 2 * sizeof(void *));
+                    global_group->first_row_set[0] = current_row_set[0];
+                    global_group->first_row_set[1] = current_row_set[1];
+
+                    global_group->agg_states = aml_pool_alloc(pool, compiled->num_aggregates * sizeof(void *));
+                    for (size_t a = 0; a < compiled->num_aggregates; a++) {
+                        global_group->agg_states[a] = aml_pool_zalloc(pool, compiled->agg_nodes[a]->spec->state_size);
+                        compiled->agg_nodes[a]->spec->agg_init(global_group->agg_states[a]);
+                    }
+                }
+                active_group = global_group;
+            }
+
+            // Route 3: Step Aggregates or write directly to Result Set
+            if (active_group) {
+                for (size_t a = 0; a < compiled->num_aggregates; a++) {
+                    compiled->agg_nodes[a]->spec->agg_step(&context, compiled->agg_nodes[a], active_group->agg_states[a]);
+                }
+            } else {
+                sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+            }
         }
     }
 
-    // 5. Sort
+    // ==========================================
+    // PASS 2: PROJECTION & MATERIALIZATION
+    // ==========================================
+
+    if (compiled->num_group_keys > 0) {
+        for (macro_map_t *p = macro_map_first(group_map_root); p; p = macro_map_next(p)) {
+            group_node_t *group = (group_node_t *)p;
+
+            context.current_agg_states = group->agg_states;
+            context.row = group->first_row_set; // <--- RESTORE THE SNAPSHOT!
+
+            sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+        }
+    } else if (global_group) {
+        context.current_agg_states = global_group->agg_states;
+        context.row = global_group->first_row_set;
+
+        sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+    }
+
     sql_result_set_sort(rs);
 
-    // 6. Output
+    // ==========================================
+    // OUTPUT
+    // ==========================================
     printf(">> Final Result Set (%zu rows):\n\n", rs->count);
     for (size_t r = 0; r < rs->count; r++) {
         printf("    ");

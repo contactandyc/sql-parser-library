@@ -53,9 +53,10 @@ find_package(a_json_library CONFIG REQUIRED)
 add_library(sql_parser_library_debug STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
-  src/specs/avg.c
   src/specs/between.c
   src/specs/boolean.c
   src/specs/case_when.c
@@ -81,7 +82,6 @@ add_library(sql_parser_library_debug STATIC
   src/specs/round.c
   src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
@@ -128,9 +128,10 @@ install(TARGETS sql_parser_library_debug EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_memory STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
-  src/specs/avg.c
   src/specs/between.c
   src/specs/boolean.c
   src/specs/case_when.c
@@ -156,7 +157,6 @@ add_library(sql_parser_library_memory STATIC
   src/specs/round.c
   src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
@@ -206,9 +206,10 @@ install(TARGETS sql_parser_library_memory EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_static STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
-  src/specs/avg.c
   src/specs/between.c
   src/specs/boolean.c
   src/specs/case_when.c
@@ -234,7 +235,6 @@ add_library(sql_parser_library_static STATIC
   src/specs/round.c
   src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
@@ -281,9 +281,10 @@ install(TARGETS sql_parser_library_static EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_shared SHARED
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
-  src/specs/avg.c
   src/specs/between.c
   src/specs/boolean.c
   src/specs/case_when.c
@@ -309,7 +310,6 @@ add_library(sql_parser_library_shared SHARED
   src/specs/round.c
   src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
