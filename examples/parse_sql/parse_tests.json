@@ -243,6 +243,34 @@
     {
       "sql": "SELECT * FROM t WHERE val1 IS NOT DISTINCT FROM val2",
       "expected": "SELECT * FROM t WHERE (val1 IS NOT DISTINCT FROM val2)"
+    },
+    {
+      "sql": "SELECT * FROM (SELECT id FROM users) AS virt",
+      "expected": "SELECT * FROM (SELECT id FROM users) AS virt"
+    },
+    {
+      "sql": "SELECT virt.id, virt.total FROM (SELECT id, total FROM orders WHERE status = 'shipped') virt WHERE virt.total > 100",
+      "expected": "SELECT virt.id, virt.total FROM (SELECT id, total FROM orders WHERE (status = 'shipped')) AS virt WHERE (100 < virt.total)"
+    },
+    {
+      "sql": "SELECT u.name, o.total FROM users u INNER JOIN (SELECT user_id, SUM(amount) AS total FROM orders GROUP BY user_id) AS o ON u.id = o.user_id",
+      "expected": "SELECT u.name, o.total FROM users AS u INNER JOIN (SELECT user_id, SUM(amount) AS total FROM orders GROUP BY user_id) AS o ON (u.id = o.user_id)"
+    },
+    {
+      "sql": "SELECT a.id, b.cnt FROM table_a a LEFT OUTER JOIN (SELECT a_id, CONT(1) AS cnt FROM table_b GROUP BY a_id) b ON a.id = b.a_id",
+      "expected": "SELECT a.id, b.cnt FROM table_a AS a LEFT JOIN (SELECT a_id, CONT(1) AS cnt FROM table_b GROUP BY a_id) AS b ON (a.id = b.a_id)"
+    },
+    {
+      "sql": "SELECT max_val FROM (SELECT MAX(val) AS max_val FROM (SELECT val FROM data WHERE active IS TRUE) AS inner_data) AS outer_data",
+      "expected": "SELECT max_val FROM (SELECT MAX(val) AS max_val FROM (SELECT val FROM data WHERE (active IS TRUE)) AS inner_data) AS outer_data"
+    },
+    {
+      "sql": "SELECT * FROM (SELECT a FROM t1) t1 JOIN (SELECT b FROM t2) t2 ON t1.a = t2.b",
+      "expected": "SELECT * FROM (SELECT a FROM t1) AS t1 INNER JOIN (SELECT b FROM t2) AS t2 ON (t1.a = t2.b)"
+    },
+    {
+      "sql": "SELECT user_id, avg_order FROM (SELECT user_id, AVG(total) AS avg_order FROM orders GROUP BY user_id HAVING AVG(total) > 50) AS high_rollers ORDER BY avg_order DESC",
+      "expected": "SELECT user_id, avg_order FROM (SELECT user_id, AVG(total) AS avg_order FROM orders GROUP BY user_id HAVING (50 < AVG(total))) AS high_rollers ORDER BY avg_order DESC"
     }
   ]
 }

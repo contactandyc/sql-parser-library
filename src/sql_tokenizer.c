@@ -167,7 +167,14 @@ void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const ch
             sql_token_t *token = _sql_token_init(bh, pool, start, length, SQL_FUNCTION, NULL);
             token->spec = spec;
         } else {
-            _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
+            const char *peek = *s;
+            while (isspace(*peek)) peek++;
+
+            if (*peek == '(') {
+                _sql_token_init(bh, pool, start, length, SQL_FUNCTION, NULL);
+            } else {
+                _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
+            }
         }
     }
 }

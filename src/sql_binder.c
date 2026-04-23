@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
 // SPDX-FileCopyrightText: 2024–2025 Knode.ai
 // SPDX-License-Identifier: Apache-2.0
-//
-// Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_binder.h"
 #include <string.h>
@@ -144,17 +142,29 @@ static bool internal_bind_query(sql_ctx_t *ctx, sql_select_t *query, bool allow_
     query_scope_t scope[MAX_TABLES_IN_QUERY];
     size_t scope_count = 0;
 
-    if (query->table) {
-        scope[scope_count].actual_table = query->table;
-        scope[scope_count].alias = query->table_alias ? query->table_alias : query->table;
+    // THE FIX: Sync Base Table with Planner index logic
+    if (query->table || query->subquery) {
+        if (query->table) {
+            scope[scope_count].actual_table = query->table;
+            scope[scope_count].alias = query->table_alias ? query->table_alias : query->table;
+        } else {
+            scope[scope_count].actual_table = query->table_alias ? query->table_alias : "subquery";
+            scope[scope_count].alias = query->table_alias ? query->table_alias : "subquery";
+        }
         scope[scope_count].table_index = scope_count;
         scope_count++;
     }
 
+    // THE FIX: Sync Join Tables with Planner index logic
     sql_join_t *j = query->joins;
     while (j && scope_count < MAX_TABLES_IN_QUERY) {
-        scope[scope_count].actual_table = j->table;
-        scope[scope_count].alias = j->alias ? j->alias : j->table;
+        if (j->table) {
+            scope[scope_count].actual_table = j->table;
+            scope[scope_count].alias = j->alias ? j->alias : j->table;
+        } else {
+            scope[scope_count].actual_table = j->alias ? j->alias : "subquery";
+            scope[scope_count].alias = j->alias ? j->alias : "subquery";
+        }
         scope[scope_count].table_index = scope_count;
         scope_count++;
         j = j->next;
@@ -190,7 +200,6 @@ static bool internal_bind_query(sql_ctx_t *ctx, sql_select_t *query, bool allow_
 }
 
 // --- PUBLIC API ---
-
 bool sql_bind_query_strict(sql_ctx_t *ctx, sql_select_t *query) {
     return internal_bind_query(ctx, query, false);
 }
@@ -201,7 +210,5 @@ bool sql_bind_query_extended(sql_ctx_t *ctx, sql_select_t *query) {
 
 bool sql_bind_expression(sql_ctx_t *ctx, sql_ast_node_t *expr) {
     if (!expr) return true;
-
-    // For raw expressions, we pass no scope. The catalog callback will handle it.
     return bind_ast_node(ctx, NULL, 0, NULL, expr);
 }

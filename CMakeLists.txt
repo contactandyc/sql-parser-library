@@ -54,6 +54,7 @@ add_library(sql_parser_library_debug STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
   src/group_specs/avg.c
+  src/group_specs/count.c
   src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
@@ -129,6 +130,7 @@ add_library(sql_parser_library_memory STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
   src/group_specs/avg.c
+  src/group_specs/count.c
   src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
@@ -207,6 +209,7 @@ add_library(sql_parser_library_static STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
   src/group_specs/avg.c
+  src/group_specs/count.c
   src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c
@@ -282,6 +285,7 @@ add_library(sql_parser_library_shared SHARED
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
   src/group_specs/avg.c
+  src/group_specs/count.c
   src/group_specs/sum.c
   src/specs/arithmetic.c
   src/specs/arithmetic_ext.c

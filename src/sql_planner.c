@@ -66,9 +66,18 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
     sql_table_request_t *req_tail = NULL;
 
     // 1. Initialize Base Table Request
-    if (ast->table) {
+    if (ast->table || ast->subquery) {
         sql_table_request_t *base_req = aml_pool_zalloc(ctx->pool, sizeof(sql_table_request_t));
-        base_req->table_name = aml_pool_strdup(ctx->pool, ast->table);
+
+        // Safely determine the name based on whether it's a physical table or a subquery
+        if (ast->table) {
+            base_req->table_name = aml_pool_strdup(ctx->pool, ast->table);
+        } else if (ast->table_alias) {
+            base_req->table_name = aml_pool_strdup(ctx->pool, ast->table_alias);
+        } else {
+            base_req->table_name = aml_pool_strdup(ctx->pool, "subquery");
+        }
+
         base_req->alias = ast->table_alias ? aml_pool_strdup(ctx->pool, ast->table_alias) : NULL;
         base_req->table_index = num_states;
         base_req->scan_strategy = SCAN_FULL_TABLE;
@@ -88,7 +97,16 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
     while (j && num_states < MAX_PLAN_TABLES) {
         // A. Create the Data Request for the table being joined
         sql_table_request_t *join_req = aml_pool_zalloc(ctx->pool, sizeof(sql_table_request_t));
-        join_req->table_name = aml_pool_strdup(ctx->pool, j->table);
+
+        // Safely determine the name based on whether it's a physical table or a subquery
+        if (j->table) {
+            join_req->table_name = aml_pool_strdup(ctx->pool, j->table);
+        } else if (j->alias) {
+            join_req->table_name = aml_pool_strdup(ctx->pool, j->alias);
+        } else {
+            join_req->table_name = aml_pool_strdup(ctx->pool, "subquery");
+        }
+
         join_req->alias = j->alias ? aml_pool_strdup(ctx->pool, j->alias) : NULL;
         join_req->table_index = num_states;
         join_req->scan_strategy = SCAN_FULL_TABLE;
@@ -130,10 +148,7 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
     plan->joins = join_head;
 
     // 3. Assign Filters (Phase 1: Everything is Global)
-    // Eventually, we will write a function here that recursively fractures `ast->where_clause`
-    // and pushes localized nodes down into `states[i].req->table_filters`.
     plan->global_filters = ast->where_clause;
-
 
     // 4. Walk the entire AST to harvest required columns
     extract_columns_from_ast(ast->columns, states, num_states);
@@ -204,7 +219,6 @@ static void append_table_filter(sql_ctx_t *ctx, sql_table_request_t *req, sql_as
         and_node->value = aml_pool_strdup(ctx->pool, "AND");
         and_node->data_type = SQL_TYPE_BOOL;
 
-        // ---> THE MAGIC FIX <---
         and_node->spec = sql_ctx_get_spec(ctx, "AND");
 
         and_node->left = req->table_filters;
@@ -319,4 +333,3 @@ void sql_print_plan(sql_execution_plan_t *plan) {
 
     printf("======================\n\n");
 }
-

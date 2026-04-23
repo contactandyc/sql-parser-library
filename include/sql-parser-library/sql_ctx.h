@@ -114,7 +114,6 @@ void sql_register_is_null(sql_ctx_t *ctx);
 void sql_register_in(sql_ctx_t *ctx);
 void sql_register_like(sql_ctx_t *ctx);
 void sql_register_convert(sql_ctx_t *ctx);
-void sql_register_avg(sql_ctx_t *ctx);
 void sql_register_coalesce(sql_ctx_t *ctx);
 void sql_register_concat(sql_ctx_t *ctx);
 void sql_register_convert_tz(sql_ctx_t *ctx);
@@ -126,7 +125,6 @@ void sql_register_min_max(sql_ctx_t *ctx);
 void sql_register_now(sql_ctx_t *ctx);
 void sql_register_round(sql_ctx_t *ctx);
 void sql_register_substr(sql_ctx_t *ctx);
-void sql_register_sum(sql_ctx_t *ctx);
 void sql_register_trim(sql_ctx_t *ctx);
 void sql_register_geo(sql_ctx_t *ctx);
 void sql_register_nullif(sql_ctx_t *ctx);
@@ -136,6 +134,12 @@ void sql_register_case(sql_ctx_t *ctx);
 void sql_register_regex(sql_ctx_t *ctx);
 void sql_register_json(sql_ctx_t *ctx);
 bool is_valid_extract(const char *value);
+
+// Group Functions
+void sql_register_avg(sql_ctx_t *ctx);
+void sql_register_count(sql_ctx_t *ctx);
+void sql_register_sum(sql_ctx_t *ctx);
+
 
 static inline
 void register_ctx(sql_ctx_t *ctx) {
@@ -154,14 +158,12 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_in(ctx);
     sql_register_like(ctx);
     sql_register_convert(ctx);
-    sql_register_avg(ctx);
     sql_register_length(ctx);
     sql_register_lower_upper(ctx);
     sql_register_min_max(ctx);
     sql_register_now(ctx);
     sql_register_round(ctx);
     sql_register_substr(ctx);
-    sql_register_sum(ctx);
     sql_register_trim(ctx);
     sql_register_geo(ctx);
     sql_register_nullif(ctx);
@@ -170,6 +172,11 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_case(ctx);
     sql_register_regex(ctx);
     sql_register_json(ctx);
+
+    // Group Functions
+    sql_register_avg(ctx);
+    sql_register_count(ctx);
+    sql_register_sum(ctx);
 }
 
 sql_node_t *sql_eval(sql_ctx_t *ctx, sql_node_t *f);

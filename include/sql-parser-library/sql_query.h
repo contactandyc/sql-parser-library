@@ -18,9 +18,12 @@ typedef enum {
     JOIN_FULL
 } sql_join_type_t;
 
+struct sql_select_s; // Forward declaration for recursive pointers
+
 typedef struct sql_join_s {
     sql_join_type_t type;
     char *table;
+    struct sql_select_s *subquery; // --- NEW: Support JOIN (SELECT ...) ---
     char *alias;
     sql_ast_node_t *on_condition;
     struct sql_join_s *next;
@@ -38,18 +41,19 @@ typedef struct sql_select_s {
     sql_ast_node_t *columns;
 
     char *table;
+    struct sql_select_s *subquery; // --- NEW: Support FROM (SELECT ...) ---
     char *table_alias;
     sql_join_t *joins;
 
     sql_ast_node_t *where_clause;
 
-    sql_ast_node_t *group_by;      // NEW: Linked list of expressions
-    sql_ast_node_t *having_clause; // NEW: Expression tree
+    sql_ast_node_t *group_by;
+    sql_ast_node_t *having_clause;
 
     sql_order_by_t *order_by;
 
-    sql_ast_node_t *limit;         // NEW: Expression tree (allows math!)
-    sql_ast_node_t *offset;        // NEW: Expression tree (allows math!)
+    sql_ast_node_t *limit;
+    sql_ast_node_t *offset;
 } sql_select_t;
 
 sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t token_count);
