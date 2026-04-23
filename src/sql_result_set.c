@@ -1,14 +1,11 @@
 // SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
 // SPDX-FileCopyrightText: 2024–2025 Knode.ai
 // SPDX-License-Identifier: Apache-2.0
-//
-// Maintainer: Andy Curtis <contactandyc@gmail.com>
 
 #include "sql-parser-library/sql_result_set.h"
-#include "the-macro-library/macro_sort.h" // Your custom introsort library!
+#include "the-macro-library/macro_sort.h"
 #include <string.h>
 
-// Deep copy evaluated nodes so they survive in the result set arena
 static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
     sql_node_t *dst = aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));
     dst->data_type = src->data_type;
@@ -18,21 +15,21 @@ static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
     if (src->data_type == SQL_TYPE_STRING) {
         dst->value.string_value = aml_pool_strdup(ctx->pool, src->value.string_value);
     } else {
-        dst->value = src->value; // Safe shallow copy for numeric/bool types
+        dst->value = src->value;
     }
     return dst;
 }
 
 // --- INITIALIZATION ---
-
-sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, size_t num_sort_keys, int *sort_directions) {
+sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, const char **column_names, size_t num_sort_keys, int *sort_directions) {
     sql_result_set_t *rs = aml_pool_zalloc(pool, sizeof(sql_result_set_t));
     rs->pool = pool;
     rs->num_columns = num_columns;
+    rs->column_names = column_names; // <-- NEW
     rs->num_sort_keys = num_sort_keys;
     rs->sort_directions = sort_directions;
 
-    rs->capacity = 16; // Initial capacity
+    rs->capacity = 16;
     rs->count = 0;
     rs->rows = aml_pool_alloc(pool, rs->capacity * sizeof(sql_result_row_t));
 
@@ -40,9 +37,7 @@ sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, size
 }
 
 // --- APPEND LOGIC ---
-
 void sql_result_set_append(sql_ctx_t *ctx, sql_result_set_t *rs, sql_node_t **projections, sql_node_t **sort_exprs) {
-    // Dynamic resize if capacity is reached
     if (rs->count >= rs->capacity) {
         size_t new_capacity = rs->capacity * 2;
         sql_result_row_t *new_rows = aml_pool_alloc(rs->pool, new_capacity * sizeof(sql_result_row_t));
@@ -71,10 +66,9 @@ void sql_result_set_append(sql_ctx_t *ctx, sql_result_set_t *rs, sql_node_t **pr
 }
 
 // --- SORTING LOGIC ---
-
 static int compare_sql_nodes(sql_node_t *a, sql_node_t *b) {
     if (a->is_null && b->is_null) return 0;
-    if (a->is_null) return -1; // NULLs first
+    if (a->is_null) return -1;
     if (b->is_null) return 1;
 
     if (a->data_type != b->data_type) return a->data_type - b->data_type;
@@ -94,38 +88,28 @@ static int compare_sql_nodes(sql_node_t *a, sql_node_t *b) {
     }
 }
 
-// A struct to pass our sort configuration safely through macro_sort's void* arg
 typedef struct {
     int *directions;
     size_t num_keys;
 } sort_config_t;
 
-// Matches the `cmp_arg` signature style: int cmp(const T*, const T*, void *arg)
 static int result_row_comparator(const sql_result_row_t *row_a, const sql_result_row_t *row_b, void *arg) {
     sort_config_t *cfg = (sort_config_t *)arg;
-
     for (size_t i = 0; i < cfg->num_keys; i++) {
         int cmp = compare_sql_nodes(row_a->sort_keys[i], row_b->sort_keys[i]);
-        if (cmp != 0) {
-            return cmp * cfg->directions[i]; // Apply ASC (1) or DESC (-1) modifier
-        }
+        if (cmp != 0) return cmp * cfg->directions[i];
     }
-    return 0; // Rows are equal
+    return 0;
 }
 
-// Bake the introsort function dynamically!
 static inline
 _macro_sort(internal_rs_sort, cmp_arg, sql_result_row_t, result_row_comparator)
 
 void sql_result_set_sort(sql_result_set_t *rs) {
     if (rs->num_sort_keys == 0 || rs->count < 2) return;
-
-    // Safely wrap our dynamic sorting config
     sort_config_t cfg = {
         .directions = rs->sort_directions,
         .num_keys = rs->num_sort_keys
     };
-
-    // Call the generated introsort function
     internal_rs_sort(rs->rows, rs->count, &cfg);
 }

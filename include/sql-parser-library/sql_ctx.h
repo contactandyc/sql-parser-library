@@ -79,6 +79,7 @@ struct sql_ctx_column_s {
     sql_node_cb func;
     char *table_name;
     int table_index;
+    void *custom_data;
 };
 
 struct sql_ctx_spec_update_s {
