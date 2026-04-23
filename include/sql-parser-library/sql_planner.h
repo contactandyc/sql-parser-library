@@ -11,6 +11,8 @@
 #include "sql-parser-library/sql_ctx.h"
 #include <stdbool.h>
 
+struct sql_index_s; // Forward declaration
+
 typedef enum {
     SCAN_FULL_TABLE,
     SCAN_INDEX_LOOKUP
@@ -33,15 +35,19 @@ typedef struct sql_table_request_s {
 
     scan_strategy_t scan_strategy;
 
-    // --- NEW: PREDICATE PUSHDOWN ---
     // Filters that only apply to this specific table.
-    // The executor should evaluate these immediately upon reading the row.
     sql_ast_node_t *table_filters;
+
+    // --- NEW: INDEX EXECUTION STATE ---
+    struct sql_index_s *index_to_use;
+    struct sql_node_s **index_exact_values;
+    struct sql_node_s **index_min_values;
+    struct sql_node_s **index_max_values;
+    size_t num_index_values;
 
     struct sql_table_request_s *next;
 } sql_table_request_t;
 
-// --- NEW: JOIN PLAN ---
 typedef struct sql_join_plan_s {
     sql_join_type_t join_type;    // INNER, LEFT, etc.
     int right_table_index;        // The index of the table being joined IN
@@ -57,18 +63,15 @@ typedef struct sql_join_plan_s {
 typedef struct {
     sql_table_request_t *table_requests;
 
-    // --- NEW: JOINS AND GLOBAL FILTERS ---
     sql_join_plan_t *joins;
 
     // Residual filters that reference MULTIPLE tables (e.g. A.price > B.cost)
-    // These must be evaluated AFTER the joins are complete.
     sql_ast_node_t *global_filters;
 
 } sql_execution_plan_t;
 
 sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast);
 void sql_print_plan(sql_execution_plan_t *plan);
-// Optimizes an execution plan by pushing global filters down to individual tables
 void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan);
 
 #endif /* _sql_planner_H */

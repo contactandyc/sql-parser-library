@@ -137,7 +137,111 @@ void tpch_stream_close(sql_dataset_t *ds) {
     if (s->in) io_in_destroy(s->in);
 }
 
-// --- 6. DUAL-MODE DYNAMIC TABLE LOADER ---
+// --- 6. INDEX IMPLEMENTATIONS ---
+
+// Integer Index State
+typedef struct { int key; void *row; } idx_int_entry_t;
+typedef struct {
+    idx_int_entry_t *entries;
+    size_t count;
+    void **result_buffer; // Pre-allocated buffer for matches
+} int_index_state_t;
+
+int cmp_int_entry(const void *a, const void *b) {
+    return ((idx_int_entry_t*)a)->key - ((idx_int_entry_t*)b)->key;
+}
+
+void **int_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t *out_count) {
+    int_index_state_t *idx = (int_index_state_t*)state;
+    if (num_vals == 0 || !vals[0] || vals[0]->data_type != SQL_TYPE_INT) {
+        *out_count = 0; return NULL;
+    }
+
+    int target = vals[0]->value.int_value;
+
+    // Standard Binary Search
+    int low = 0, high = idx->count - 1;
+    int first_match = -1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (idx->entries[mid].key == target) {
+            first_match = mid;
+            high = mid - 1; // Keep going left to find the VERY FIRST match
+        } else if (idx->entries[mid].key < target) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    if (first_match == -1) {
+        *out_count = 0; return NULL;
+    }
+
+    // Collect all identical keys (e.g. part.mfgr has duplicates)
+    size_t matches = 0;
+    while (first_match + matches < idx->count && idx->entries[first_match + matches].key == target) {
+        idx->result_buffer[matches] = idx->entries[first_match + matches].row;
+        matches++;
+    }
+
+    *out_count = matches;
+    return idx->result_buffer;
+}
+
+// String Index State
+typedef struct { const char *key; void *row; } idx_str_entry_t;
+typedef struct {
+    idx_str_entry_t *entries;
+    size_t count;
+    void **result_buffer;
+} str_index_state_t;
+
+int cmp_str_entry(const void *a, const void *b) {
+    return strcmp(((idx_str_entry_t*)a)->key, ((idx_str_entry_t*)b)->key);
+}
+
+void **str_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t *out_count) {
+    str_index_state_t *idx = (str_index_state_t*)state;
+    if (num_vals == 0 || !vals[0] || vals[0]->data_type != SQL_TYPE_STRING) {
+        *out_count = 0; return NULL;
+    }
+
+    const char *target = vals[0]->value.string_value;
+
+    int low = 0, high = idx->count - 1;
+    int first_match = -1;
+
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        int cmp = strcmp(idx->entries[mid].key, target);
+        if (cmp == 0) {
+            first_match = mid;
+            high = mid - 1; // Find the earliest duplicate
+        } else if (cmp < 0) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    if (first_match == -1) {
+        *out_count = 0; return NULL;
+    }
+
+    size_t matches = 0;
+    while (first_match + matches < idx->count && strcmp(idx->entries[first_match + matches].key, target) == 0) {
+        idx->result_buffer[matches] = idx->entries[first_match + matches].row;
+        matches++;
+    }
+
+    *out_count = matches;
+    return idx->result_buffer;
+}
+
+
+// --- 7. DUAL-MODE DYNAMIC TABLE LOADER ---
 sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
     int t_idx = -1;
     if (!strcasecmp(table, "region")) t_idx = 0; else if (!strcasecmp(table, "nation")) t_idx = 1;
@@ -172,7 +276,90 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
             parse_tpch_row(t_idx, line, row);
             row_ptrs[i] = row;
         }
-        return sql_vm_create_materialized_dataset(vm, lines, row_ptrs);
+
+        sql_dataset_t *ds = sql_vm_create_materialized_dataset(vm, lines, row_ptrs);
+
+        // --- NEW: ATTACH INDEXES TO THE DATASET ---
+        if (t_idx == 0) { // region
+            // Build String Index on region.name
+            sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
+            const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
+            cols[0] = "name";
+            idx->column_names = cols;
+            idx->num_columns = 1;
+            idx->type = INDEX_TYPE_BTREE;
+            idx->lookup_exact = str_index_lookup;
+
+            str_index_state_t *state = aml_pool_zalloc(vm->pool, sizeof(str_index_state_t));
+            state->count = lines;
+            state->entries = aml_pool_alloc(vm->pool, lines * sizeof(idx_str_entry_t));
+            state->result_buffer = aml_pool_alloc(vm->pool, lines * sizeof(void*));
+
+            for(size_t i=0; i<lines; i++) {
+                state->entries[i].key = ((region_t*)row_ptrs[i])->name;
+                state->entries[i].row = row_ptrs[i];
+            }
+            qsort(state->entries, lines, sizeof(idx_str_entry_t), cmp_str_entry);
+            idx->index_state = state;
+
+            ds->num_indexes = 1;
+            ds->indexes = aml_pool_alloc(vm->pool, sizeof(sql_index_t*));
+            ds->indexes[0] = idx;
+        }
+        else if (t_idx == 1) { // nation
+            // Build Int Index on nation.nationkey
+            sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
+            const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
+            cols[0] = "nationkey";
+            idx->column_names = cols;
+            idx->num_columns = 1;
+            idx->type = INDEX_TYPE_BTREE;
+            idx->lookup_exact = int_index_lookup;
+
+            int_index_state_t *state = aml_pool_zalloc(vm->pool, sizeof(int_index_state_t));
+            state->count = lines;
+            state->entries = aml_pool_alloc(vm->pool, lines * sizeof(idx_int_entry_t));
+            state->result_buffer = aml_pool_alloc(vm->pool, lines * sizeof(void*));
+
+            for(size_t i=0; i<lines; i++) {
+                state->entries[i].key = ((nation_t*)row_ptrs[i])->nationkey;
+                state->entries[i].row = row_ptrs[i];
+            }
+            qsort(state->entries, lines, sizeof(idx_int_entry_t), cmp_int_entry);
+            idx->index_state = state;
+
+            ds->num_indexes = 1;
+            ds->indexes = aml_pool_alloc(vm->pool, sizeof(sql_index_t*));
+            ds->indexes[0] = idx;
+        }
+        else if (t_idx == 3) { // part
+            // Build String Index on part.mfgr
+            sql_index_t *idx = aml_pool_zalloc(vm->pool, sizeof(sql_index_t));
+            const char **cols = aml_pool_alloc(vm->pool, sizeof(char*));
+            cols[0] = "mfgr";
+            idx->column_names = cols;
+            idx->num_columns = 1;
+            idx->type = INDEX_TYPE_BTREE;
+            idx->lookup_exact = str_index_lookup;
+
+            str_index_state_t *state = aml_pool_zalloc(vm->pool, sizeof(str_index_state_t));
+            state->count = lines;
+            state->entries = aml_pool_alloc(vm->pool, lines * sizeof(idx_str_entry_t));
+            state->result_buffer = aml_pool_alloc(vm->pool, lines * sizeof(void*));
+
+            for(size_t i=0; i<lines; i++) {
+                state->entries[i].key = ((part_t*)row_ptrs[i])->mfgr;
+                state->entries[i].row = row_ptrs[i];
+            }
+            qsort(state->entries, lines, sizeof(idx_str_entry_t), cmp_str_entry);
+            idx->index_state = state;
+
+            ds->num_indexes = 1;
+            ds->indexes = aml_pool_alloc(vm->pool, sizeof(sql_index_t*));
+            ds->indexes[0] = idx;
+        }
+
+        return ds;
     }
     else {
         printf("[SCHEMA] Streaming '%s' from Disk (Size: %zu bytes)\n", table, file_size);
@@ -188,10 +375,10 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
     }
 }
 
-// --- 7. EXECUTION ---
+// --- 8. EXECUTION ---
 int main(int argc, char **argv) {
     const char *queries[] = {
-        // Test 1: Simple Scan & Filter
+        // Test 1: Simple Scan & Filter (Should use the region.name STRING index)
         "SELECT name, comment "
         "FROM region "
         "WHERE name = 'AMERICA'",
@@ -218,7 +405,7 @@ int main(int argc, char **argv) {
         "HAVING NationKeySum > 10 "
         "ORDER BY Region DESC",
 
-        // Test 5: The 4-Table TPC-H Beast
+        // Test 5: The 4-Table TPC-H Beast (Should heavily leverage the part.mfgr STRING index)
         "SELECT n.name AS Nation, SUM(l.extendedprice * (1 - l.discount)) AS Revenue "
         "FROM part p "
         "JOIN lineitem l ON p.partkey = l.partkey "
@@ -238,7 +425,57 @@ int main(int argc, char **argv) {
         ") "
         "SELECT Region, SUM(nationkey) AS SumKey "
         "FROM regional_nations "
-        "GROUP BY Region"
+        "GROUP BY Region",
+
+        // Test 7: Multiple CTEs referencing each other (Tests complex scope resolution)
+        "WITH supplier_count AS ( "
+        "    SELECT nationkey, COUNT(suppkey) AS supp_count "
+        "    FROM supplier "
+        "    GROUP BY nationkey "
+        "), "
+        "nation_regions AS ( "
+        "    SELECT n.nationkey, n.name AS nation_name, r.name AS region_name "
+        "    FROM nation n "
+        "    JOIN region r ON n.regionkey = r.regionkey "
+        ") "
+        "SELECT nr.region_name, SUM(sc.supp_count) AS total_suppliers "
+        "FROM nation_regions nr "
+        "JOIN supplier_count sc ON nr.nationkey = sc.nationkey "
+        "GROUP BY nr.region_name "
+        "ORDER BY total_suppliers DESC",
+
+        // Test 8: LEFT JOIN & COUNT (Tests null handling and non-matching rows)
+        "SELECT n.name AS Nation, COUNT(s.suppkey) AS Supp_Count "
+        "FROM nation n "
+        "LEFT JOIN supplier s ON n.nationkey = s.nationkey "
+        "GROUP BY n.name "
+        "ORDER BY Supp_Count ASC, Nation ASC "
+        "LIMIT 10",
+
+        // Test 9: Complex Aggregation Math (Tests the arithmetic execution bridge)
+        "SELECT c.mktsegment, SUM(c.acctbal) AS TotalBal, (SUM(c.acctbal) / COUNT(c.custkey)) AS AvgBal "
+        "FROM customer c "
+        "GROUP BY c.mktsegment "
+        "HAVING AvgBal > 4000 "
+        "ORDER BY TotalBal DESC",
+
+        // Test 10: Deeply Nested Subqueries (Tests virtual table routing in the FROM clause)
+        "SELECT top_nations.Region, top_nations.Nation "
+        "FROM ( "
+        "    SELECT r.name AS Region, n.name AS Nation "
+        "    FROM nation n "
+        "    JOIN region r ON n.regionkey = r.regionkey "
+        ") AS top_nations "
+        "WHERE top_nations.Region = 'EUROPE' "
+        "ORDER BY top_nations.Nation ASC",
+
+        // Test 11: IS NULL and Boolean logic (Tests the logical simplifier)
+        "SELECT c.name, c.acctbal "
+        "FROM customer c "
+        "LEFT JOIN orders o ON c.custkey = o.custkey "
+        "WHERE o.orderkey IS NULL AND c.acctbal > 9000 "
+        "ORDER BY c.acctbal DESC "
+        "LIMIT 5"
     };
 
     size_t num_queries = sizeof(queries) / sizeof(queries[0]);

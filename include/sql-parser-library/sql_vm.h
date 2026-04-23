@@ -11,15 +11,43 @@
 
 typedef struct sql_vm_s sql_vm_t;
 struct sql_dataset_s;
+struct sql_node_s;
 
 typedef enum {
     DS_MODE_MATERIALIZED,
     DS_MODE_STREAMING
 } sql_dataset_mode_t;
 
+// --- NEW: USER PROVIDED INDEX INTERFACE ---
+typedef enum {
+    INDEX_TYPE_HASH,   // O(1) exact match only
+    INDEX_TYPE_BTREE   // O(log n) exact match, range scans, and ordered traversal
+} sql_index_type_t;
+
+typedef struct sql_index_s {
+    const char **column_names; // e.g., ["last_name", "first_name"]
+    size_t num_columns;        // e.g., 2
+
+    sql_index_type_t type;
+    void *index_state;         // The user's internal map/tree pointer
+
+    // lookup_exact receives an array of perfectly matched values
+    void **(*lookup_exact)(void *index_state,
+                           struct sql_node_s **vals,
+                           size_t num_vals,
+                           size_t *out_count);
+
+    // lookup_range receives min/max boundaries (which can be NULL for open ranges)
+    void **(*lookup_range)(void *index_state,
+                           struct sql_node_s **min_vals,
+                           struct sql_node_s **max_vals,
+                           size_t num_vals,
+                           size_t *out_count);
+} sql_index_t;
+
 // Represents a data source (Physical Table OR Virtual Subquery)
 typedef struct sql_dataset_s {
-    const char *table_name; // NEW: The physical schema name
+    const char *table_name; // The physical schema name
     const char *alias;      // The query alias (e.g. 'p')
     bool is_virtual;
     sql_dataset_mode_t mode;
@@ -39,6 +67,10 @@ typedef struct sql_dataset_s {
     size_t num_columns;
     const char **column_names;
     sql_data_type_t *column_types;
+
+    // --- NEW: Attached Indexes ---
+    size_t num_indexes;
+    sql_index_t **indexes;
 } sql_dataset_t;
 
 // Host application callbacks

@@ -194,10 +194,109 @@ static bool node_depends_on_table(sql_node_t *node, int t_idx) {
     return false;
 }
 
+// --- NEW: INDEX HARVESTER ---
+static void harvest_index_conditions(sql_ctx_t *ctx, sql_node_t *filter_node, int table_idx, const char *col_name,
+                                     sql_node_t **out_exact, sql_node_t **out_min, sql_node_t **out_max) {
+    if (!filter_node) return;
+
+    if (filter_node->token_type == SQL_AND || filter_node->type == SQL_AND) {
+        for (size_t i = 0; i < filter_node->num_parameters; i++) {
+            harvest_index_conditions(ctx, filter_node->parameters[i], table_idx, col_name, out_exact, out_min, out_max);
+        }
+        return;
+    }
+
+    if (filter_node->type == SQL_COMPARISON && filter_node->num_parameters == 2) {
+        sql_node_t *left = filter_node->parameters[0];
+        sql_node_t *right = filter_node->parameters[1];
+
+        sql_node_t *col_node = NULL, *val_node = NULL;
+        bool is_col_left = false;
+
+        if (left->column && left->column->table_index == table_idx && strcasecmp(left->column->name, col_name) == 0) {
+            col_node = left; val_node = right; is_col_left = true;
+        } else if (right->column && right->column->table_index == table_idx && strcasecmp(right->column->name, col_name) == 0) {
+            col_node = right; val_node = left; is_col_left = false;
+        }
+
+        if (col_node && val_node) {
+            int dep = -2; check_node_dep(val_node, &dep);
+            if (dep != table_idx) {
+                if (strcmp(filter_node->token, "=") == 0) {
+                    *out_exact = val_node;
+                } else if (strcmp(filter_node->token, ">") == 0 || strcmp(filter_node->token, ">=") == 0) {
+                    if (is_col_left) *out_min = val_node; else *out_max = val_node;
+                } else if (strcmp(filter_node->token, "<") == 0 || strcmp(filter_node->token, "<=") == 0) {
+                    if (is_col_left) *out_max = val_node; else *out_min = val_node;
+                }
+            }
+        }
+    }
+}
+
+static void optimize_indexes_for_table(sql_ctx_t *ctx, sql_table_request_t *req, sql_dataset_t *ds, sql_node_t *local_filter) {
+    if (!ds->indexes || ds->num_indexes == 0 || !local_filter) return;
+
+    int best_index = -1;
+    size_t best_score = 0;
+    sql_node_t *best_exact[16] = {0}, *best_min[16] = {0}, *best_max[16] = {0};
+
+    for (size_t i = 0; i < ds->num_indexes; i++) {
+        sql_index_t *idx = ds->indexes[i];
+        size_t score = 0;
+        sql_node_t *temp_exact[16] = {0}, *temp_min[16] = {0}, *temp_max[16] = {0};
+
+        for (size_t c = 0; c < idx->num_columns && c < 16; c++) {
+            harvest_index_conditions(ctx, local_filter, req->table_index, idx->column_names[c],
+                                     &temp_exact[c], &temp_min[c], &temp_max[c]);
+
+            if (temp_exact[c]) {
+                score += 10;
+            } else if (temp_min[c] || temp_max[c]) {
+                if (idx->type == INDEX_TYPE_BTREE) score += 5;
+                break;
+            } else {
+                break;
+            }
+        }
+
+        if (score > best_score) {
+            best_score = score;
+            best_index = (int)i;
+            memcpy(best_exact, temp_exact, sizeof(best_exact));
+            memcpy(best_min, temp_min, sizeof(best_min));
+            memcpy(best_max, temp_max, sizeof(best_max));
+        }
+    }
+
+    if (best_index >= 0) {
+        sql_index_t *idx = ds->indexes[best_index];
+        req->scan_strategy = SCAN_INDEX_LOOKUP;
+        req->index_to_use = idx;
+
+        size_t matched_cols = 0;
+        while(matched_cols < idx->num_columns && (best_exact[matched_cols] || best_min[matched_cols] || best_max[matched_cols])) matched_cols++;
+
+        req->num_index_values = matched_cols;
+        req->index_exact_values = aml_pool_alloc(ctx->pool, matched_cols * sizeof(sql_node_t *));
+        req->index_min_values = aml_pool_alloc(ctx->pool, matched_cols * sizeof(sql_node_t *));
+        req->index_max_values = aml_pool_alloc(ctx->pool, matched_cols * sizeof(sql_node_t *));
+
+        memcpy(req->index_exact_values, best_exact, matched_cols * sizeof(sql_node_t *));
+        memcpy(req->index_min_values, best_min, matched_cols * sizeof(sql_node_t *));
+        memcpy(req->index_max_values, best_max, matched_cols * sizeof(sql_node_t *));
+
+        VM_DEBUG("[VM-OPT] Assigned %s Index on (%s...) for '%s' (Matched %zu prefix columns)\n",
+                 idx->type == INDEX_TYPE_BTREE ? "B-Tree" : "Hash", idx->column_names[0], ds->alias, matched_cols);
+    }
+}
+
 // --- DUAL-MODE NESTED LOOP EXECUTOR ---
 static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                          int num_datasets, int step, int *exec_order, void **current_row_set,
-                         sql_dataset_t **datasets, sql_node_t **local_filters, sql_node_t **step_join_conds,
+                         sql_dataset_t **datasets, sql_table_request_t **req_array,
+                         sql_node_t **local_filters, sql_node_t **step_join_conds,
+                         sql_join_type_t *step_join_types, // --- NEW: JOIN TYPE PROPAGATION ---
                          sql_node_t *global_filter, macro_map_t **group_map_root,
                          group_node_t **global_group, sql_result_set_t *rs,
                          macro_map_t **join_maps, sql_node_t **join_probe_exprs) {
@@ -264,10 +363,12 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
     }
 
     int t_idx = exec_order[step];
+    sql_table_request_t *req = req_array[t_idx];
 
     // --- HASH JOIN PROBE PHASE ---
     if (join_maps && join_maps[step]) {
         sql_node_t *probe_key = sql_eval(ctx, join_probe_exprs[step]);
+        bool matched_any = false; // --- FIX: Track if any rows matched ---
 
         if (probe_key && !probe_key->is_null) {
             group_node_t lookup = {0};
@@ -278,21 +379,86 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
                 join_row_t *jr = found->rows;
                 while (jr) {
                     current_row_set[t_idx] = jr->row;
+                    matched_any = true;
                     execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
-                                        datasets, local_filters, step_join_conds, global_filter,
+                                        datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
                                         group_map_root, global_group, rs, join_maps, join_probe_exprs);
                     jr = jr->next;
                 }
             }
         }
+
+        // --- FIX: NULL padding for LEFT JOIN ---
+        if (!matched_any && step_join_types[step] == JOIN_LEFT) {
+            current_row_set[t_idx] = NULL;
+            execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
+                                datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
+                                group_map_root, global_group, rs, join_maps, join_probe_exprs);
+        }
+
+        return;
+    }
+
+    sql_dataset_t *ds = datasets[t_idx];
+    sql_node_t *local_filter = local_filters[t_idx];
+    sql_node_t *join_cond = step_join_conds[step];
+    bool matched_any = false; // --- FIX: Track if any rows matched ---
+
+    // --- INDEX LOOKUP FAST PATH ---
+    if (req && req->scan_strategy == SCAN_INDEX_LOOKUP && req->index_to_use) {
+        size_t match_count = 0;
+        void **matched_rows = NULL;
+
+        sql_node_t *eval_exacts[16] = {0};
+        sql_node_t *eval_mins[16] = {0};
+        sql_node_t *eval_maxs[16] = {0};
+
+        for(size_t c=0; c < req->num_index_values; c++) {
+            if(req->index_exact_values[c]) eval_exacts[c] = sql_eval(ctx, req->index_exact_values[c]);
+            if(req->index_min_values[c]) eval_mins[c] = sql_eval(ctx, req->index_min_values[c]);
+            if(req->index_max_values[c]) eval_maxs[c] = sql_eval(ctx, req->index_max_values[c]);
+        }
+
+        bool is_range = false;
+        for(size_t c=0; c < req->num_index_values; c++) {
+            if (eval_mins[c] || eval_maxs[c]) is_range = true;
+        }
+
+        if (is_range && req->index_to_use->lookup_range) {
+            matched_rows = req->index_to_use->lookup_range(req->index_to_use->index_state, eval_mins, eval_maxs, req->num_index_values, &match_count);
+        } else if (req->index_to_use->lookup_exact) {
+            matched_rows = req->index_to_use->lookup_exact(req->index_to_use->index_state, eval_exacts, req->num_index_values, &match_count);
+        }
+
+        for (size_t i = 0; i < match_count; i++) {
+            current_row_set[t_idx] = matched_rows[i];
+
+            if (local_filter) {
+                sql_node_t *res = sql_eval(ctx, local_filter);
+                if (!res || res->is_null || !res->value.bool_value) continue;
+            }
+            if (join_cond) {
+                sql_node_t *res = sql_eval(ctx, join_cond);
+                if (!res || res->is_null || !res->value.bool_value) continue;
+            }
+
+            matched_any = true;
+            execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
+                                datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
+                                group_map_root, global_group, rs, join_maps, join_probe_exprs);
+        }
+
+        // --- FIX: NULL padding for LEFT JOIN ---
+        if (!matched_any && step_join_types[step] == JOIN_LEFT) {
+            current_row_set[t_idx] = NULL;
+            execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
+                                datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
+                                group_map_root, global_group, rs, join_maps, join_probe_exprs);
+        }
         return;
     }
 
     // --- STANDARD READ LOOP (NESTED LOOP FALLBACK) ---
-    sql_dataset_t *ds = datasets[t_idx];
-    sql_node_t *local_filter = local_filters[t_idx];
-    sql_node_t *join_cond = step_join_conds[step];
-
     size_t mat_idx = 0;
     void *raw_row = NULL;
 
@@ -320,8 +486,17 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
             if (!res || res->is_null || !res->value.bool_value) continue;
         }
 
+        matched_any = true;
         execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
-                            datasets, local_filters, step_join_conds, global_filter,
+                            datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
+                            group_map_root, global_group, rs, join_maps, join_probe_exprs);
+    }
+
+    // --- FIX: NULL padding for LEFT JOIN ---
+    if (!matched_any && step_join_types[step] == JOIN_LEFT) {
+        current_row_set[t_idx] = NULL;
+        execute_nested_loop(ctx, compiled, num_datasets, step + 1, exec_order, current_row_set,
+                            datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
                             group_map_root, global_group, rs, join_maps, join_probe_exprs);
     }
 }
@@ -352,7 +527,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
             VM_DEBUG("[VM-INIT] Evaluating CTE '%s'\n", cte->alias);
             sql_dataset_t *cte_ds = internal_execute(vm, cte->query, cte->alias, available_ctes, cte_idx);
             if (!cte_ds) return NULL;
-            cte_ds->table_name = aml_pool_strdup(ctx->pool, cte->alias); // Alias is its physical schema name
+            cte_ds->table_name = aml_pool_strdup(ctx->pool, cte->alias);
             available_ctes[cte_idx++] = cte_ds;
             cte = cte->next;
         }
@@ -378,7 +553,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         if (matched_cte) {
             VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", ast->table);
             datasets[num_datasets] = aml_pool_alloc(ctx->pool, sizeof(sql_dataset_t));
-            *datasets[num_datasets] = *matched_cte; // Shallow copy allows independent aliases for the same memory blocks!
+            *datasets[num_datasets] = *matched_cte;
             datasets[num_datasets]->alias = ast->table_alias ? ast->table_alias : matched_cte->alias;
             num_datasets++;
         } else {
@@ -456,7 +631,9 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         sql_join_plan_t *jp = plan->joins;
         while (jp) {
             int r_table = jp->right_table_index;
-            if (jp->on_condition && jp->on_condition->left && jp->on_condition->right) {
+
+            // --- FIX: Only allow INNER joins to be reordered. ---
+            if (jp->join_type == JOIN_INNER && jp->on_condition && jp->on_condition->left && jp->on_condition->right) {
                 sql_node_t *l_cond = sql_compile_expression(ctx, jp->on_condition->left);
                 sql_node_t *r_cond = sql_compile_expression(ctx, jp->on_condition->right);
 
@@ -491,6 +668,11 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     // --- 2. DYNAMIC CONDITION SCHEDULER ---
     sql_node_t **step_join_conds = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
+    sql_join_type_t *step_join_types = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_join_type_t)); // --- NEW: Track the join type ---
+
+    // Default to INNER
+    for(size_t i = 0; i < num_datasets; i++) step_join_types[i] = JOIN_INNER;
+
     sql_join_plan_t *jp_pass = plan->joins;
     while(jp_pass) {
         sql_node_t *compiled_cond = sql_compile_expression(ctx, jp_pass->on_condition);
@@ -503,13 +685,21 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         VM_DEBUG("[VM-MAP] Join condition assigned to Execution Step %d (Table '%s')\n",
                  max_step, datasets[exec_order[max_step]]->alias);
         step_join_conds[max_step] = compiled_cond;
+        step_join_types[max_step] = jp_pass->join_type; // Capture the type
         jp_pass = jp_pass->next;
     }
 
+    // --- 2.5 LOCAL FILTER & INDEX OPTIMIZATION ---
     sql_node_t **local_filters = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_node_t *));
+    sql_table_request_t **req_array = aml_pool_zalloc(ctx->pool, num_datasets * sizeof(sql_table_request_t *));
+
     sql_table_request_t *req = plan->table_requests;
     while(req) {
+        req_array[req->table_index] = req;
         local_filters[req->table_index] = sql_compile_expression(ctx, req->table_filters);
+
+        optimize_indexes_for_table(ctx, req, datasets[req->table_index], local_filters[req->table_index]);
+
         req = req->next;
     }
 
@@ -614,7 +804,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     VM_DEBUG("[VM-EXEC] Starting Final Pipeline...\n");
     execute_nested_loop(ctx, compiled, num_datasets, 0, exec_order, current_row_set,
-                        datasets, local_filters, step_join_conds, global_filter,
+                        datasets, req_array, local_filters, step_join_conds, step_join_types, global_filter,
                         &group_map_root, &global_group, rs, join_maps, join_probe_exprs);
 
     if (compiled->num_group_keys > 0) {
