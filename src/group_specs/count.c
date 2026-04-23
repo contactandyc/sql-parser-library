@@ -13,8 +13,9 @@ static void count_init(void *state) {
 }
 
 static void count_step(sql_ctx_t *ctx, sql_node_t *f, void *state) {
-    if (f->num_parameters == 0) {
-        // COUNT(*) or COUNT()
+    // Intercept the raw '*' token natively before evaluating!
+    if (f->num_parameters == 0 ||
+       (f->num_parameters == 1 && f->parameters[0]->token && strcmp(f->parameters[0]->token, "*") == 0)) {
         *(int *)state += 1;
     } else {
         // COUNT(column) - Only count non-null values

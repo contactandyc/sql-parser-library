@@ -74,6 +74,11 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
         case SQL_NOT:
             node->data_type = SQL_TYPE_BOOL;
             break;
+        case SQL_STAR:
+        case SQL_OPERATOR:
+            // Safely type Stars/Operators to unknown so they can pass cleanly into COUNT(*)
+            node->data_type = SQL_TYPE_UNKNOWN;
+            break;
         default:
             node->data_type = SQL_TYPE_UNKNOWN;
             break;
@@ -312,6 +317,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
 
     sql_token_t *token = tokens[*pos];
 
+    // 1. CASE WHEN ... END Block
     if (strcasecmp(token->token, "CASE") == 0) {
         (*pos)++;
         sql_ast_node_t *case_node = create_ast_node(context, token);
@@ -357,6 +363,49 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
         return case_node;
     }
 
+    // 2. INTERVAL Fusion Block
+    // Case A: The Tokenizer split INTERVAL, '30', and DAY
+    if (strcasecmp(token->token, "INTERVAL") == 0) {
+        (*pos)++; // Consume INTERVAL
+        if (*pos + 1 < end_pos) {
+            sql_token_t *val_token = tokens[(*pos)++];
+            sql_token_t *unit_token = tokens[(*pos)++];
+
+            char *combined = aml_pool_strdupf(context->pool, "INTERVAL %s %s", val_token->token, unit_token->token);
+            sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
+            node->type = SQL_COMPOUND_LITERAL;
+            node->value = combined;
+            node->data_type = SQL_TYPE_STRING;
+            return node;
+        } else {
+            sql_ctx_error(context, "Incomplete INTERVAL expression");
+            return NULL;
+        }
+    }
+    // Case B: The Tokenizer pre-fused the string (SQL_COMPOUND_LITERAL: "INTERVAL '30'") leaving DAY behind
+    else if (token->type == SQL_COMPOUND_LITERAL && strncasecmp(token->token, "INTERVAL", 8) == 0) {
+        (*pos)++; // Consume the compound literal
+
+        // FIX: Allow the unit token to be a SQL_FUNCTION (like DAY or MONTH)
+        if (*pos < end_pos && (tokens[*pos]->type == SQL_IDENTIFIER ||
+                               tokens[*pos]->type == SQL_KEYWORD ||
+                               tokens[*pos]->type == SQL_FUNCTION)) {
+            sql_token_t *unit_token = tokens[(*pos)++];
+
+            // Fuse the unit with the existing compound string
+            char *combined = aml_pool_strdupf(context->pool, "%s %s", token->token, unit_token->token);
+            sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
+            node->type = SQL_COMPOUND_LITERAL;
+            node->value = combined;
+            node->data_type = SQL_TYPE_STRING;
+            return node;
+        } else {
+            // If there's no unit, safely return the compound literal as-is
+            return create_ast_node(context, token);
+        }
+    }
+
+    // 3. Parentheses Block
     if (token->type == SQL_OPEN_PAREN) {
         (*pos)++;
         sql_ast_node_t *node = parse_expression(context, tokens, pos, end_pos);
@@ -369,15 +418,20 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
         return node;
     }
 
+    // 4. Function Calls
     if (token->type == SQL_FUNCTION) {
         (*pos)++;
         return parse_function_call(context, tokens, pos, end_pos);
     }
 
+    // 5. Identifiers, Literals, Stars, and :: CAST
+    // FIX: Check for the "*" string natively, bypassing strict type categories!
     if (token->type == SQL_IDENTIFIER ||
         token->type == SQL_COMPOUND_LITERAL ||
         token->type == SQL_LITERAL ||
-        token->type == SQL_NUMBER) {
+        token->type == SQL_NUMBER ||
+        strcmp(token->token, "*") == 0) {
+
         sql_ast_node_t *node = create_ast_node(context, token);
         if (is_context_error(context)) return NULL;
         (*pos)++;
@@ -537,7 +591,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 
         func_node->left = arg_list_head;
 
-        // --- NEW: PARSE WINDOW CLAUSES ---
+        // --- PARSE WINDOW CLAUSES ---
         if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "OVER") == 0) {
             (*pos)++; // Consume OVER
             if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
@@ -796,7 +850,6 @@ static sql_ast_node_t *parse_standard_comparison(sql_ctx_t *context,
     if (is_context_error(context)) return NULL;
 
     if (operator_token->token[0] == '>') {
-        // --- SECURE ALLOCATION FIX ---
         if (strcmp(operator_token->token, ">=") == 0) {
             op_node->value = aml_pool_strdup(context->pool, "<=");
         } else {

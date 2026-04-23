@@ -233,6 +233,12 @@ static sql_ctx_spec_update_t *update_trunc_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     sql_node_t *part_node = f->parameters[0];
     sql_node_t *datetime_node = f->parameters[1];
 
+    // --- NEW: Implicit Coercion ---
+    if (datetime_node->data_type == SQL_TYPE_STRING) {
+        datetime_node = sql_convert(ctx, datetime_node, SQL_TYPE_DATETIME);
+        f->parameters[1] = datetime_node;
+    }
+
     if (part_node->data_type != SQL_TYPE_STRING || datetime_node->data_type != SQL_TYPE_DATETIME) {
         sql_ctx_error(ctx, "Invalid parameter types for DATE_TRUNC. Expected (STRING, DATETIME).");
         return NULL;
@@ -246,7 +252,7 @@ static sql_ctx_spec_update_t *update_trunc_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
 
     sql_ctx_spec_update_t *update = (sql_ctx_spec_update_t *)aml_pool_zalloc(ctx->pool, sizeof(sql_ctx_spec_update_t));
     update->num_parameters = 1;
-    update->parameters = f->parameters + 1; // Only pass the datetime node to the implementation
+    update->parameters = f->parameters + 1;
     update->expected_data_types = (sql_data_type_t *)aml_pool_alloc(ctx->pool, sizeof(sql_data_type_t));
     update->expected_data_types[0] = SQL_TYPE_DATETIME;
     update->return_type = SQL_TYPE_DATETIME;

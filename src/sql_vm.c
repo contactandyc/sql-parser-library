@@ -11,7 +11,6 @@
 #include <string.h>
 #include <stdio.h>
 
-// --- VM DEBUGGING MACROS ---
 #define ENABLE_VM_DEBUG
 #ifdef ENABLE_VM_DEBUG
     #define VM_DEBUG(...) printf(__VA_ARGS__)
@@ -19,7 +18,6 @@
     #define VM_DEBUG(...) do {} while (0)
 #endif
 
-// --- VM CONTEXT ---
 typedef struct {
     sql_vm_t *vm;
     sql_dataset_t **datasets;
@@ -361,7 +359,15 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
             if (!active_group) {
                 active_group = aml_pool_zalloc(ctx->pool, sizeof(group_node_t));
                 active_group->first_row_set = aml_pool_alloc(ctx->pool, num_datasets * sizeof(void *));
-                for (int c = 0; c < num_datasets; c++) active_group->first_row_set[c] = current_row_set[c];
+
+                // --- CLONE ROW FIX FOR GROUP BUCKETS ---
+                for (int c = 0; c < num_datasets; c++) {
+                    if (datasets[c]->clone_row && current_row_set[c]) {
+                        active_group->first_row_set[c] = datasets[c]->clone_row(datasets[c], current_row_set[c], ctx->pool);
+                    } else {
+                        active_group->first_row_set[c] = current_row_set[c];
+                    }
+                }
 
                 active_group->num_keys = compiled->num_group_keys;
                 active_group->group_keys = aml_pool_alloc(ctx->pool, compiled->num_group_keys * sizeof(sql_node_t *));
@@ -381,7 +387,15 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
             if (!*global_group) {
                 *global_group = aml_pool_zalloc(ctx->pool, sizeof(group_node_t));
                 (*global_group)->first_row_set = aml_pool_alloc(ctx->pool, num_datasets * sizeof(void *));
-                for (int c = 0; c < num_datasets; c++) (*global_group)->first_row_set[c] = current_row_set[c];
+
+                // --- CLONE ROW FIX FOR GLOBAL GROUP ---
+                for (int c = 0; c < num_datasets; c++) {
+                    if (datasets[c]->clone_row && current_row_set[c]) {
+                        (*global_group)->first_row_set[c] = datasets[c]->clone_row(datasets[c], current_row_set[c], ctx->pool);
+                    } else {
+                        (*global_group)->first_row_set[c] = current_row_set[c];
+                    }
+                }
 
                 (*global_group)->agg_states = aml_pool_alloc(ctx->pool, compiled->num_aggregates * sizeof(void *));
                 for (size_t a = 0; a < compiled->num_aggregates; a++) {
@@ -935,6 +949,12 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         aml_buffer_appendf(buf, "===============================\n");
         aml_buffer_appendc(buf, '\0');
 
+        for (size_t i = 0; i < num_datasets; i++) {
+            if (datasets[i]->mode == DS_MODE_STREAMING && datasets[i]->close) {
+                datasets[i]->close(datasets[i]);
+            }
+        }
+
         ctx->catalog_state = old_catalog_state;
         ctx->row = old_row;
         ctx->current_agg_states = old_agg_states;
@@ -1029,7 +1049,14 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                     }
 
                     join_row_t *jr = aml_pool_zalloc(ctx->pool, sizeof(join_row_t));
-                    jr->row = raw_row;
+
+                    // --- CLONE ROW FIX FOR HASH MAP BUILDING ---
+                    if (ds->clone_row) {
+                        jr->row = ds->clone_row(ds, raw_row, ctx->pool);
+                    } else {
+                        jr->row = raw_row;
+                    }
+
                     jr->next = found->rows;
                     found->rows = jr;
                 }
@@ -1150,6 +1177,8 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 }
 
 sql_result_set_t *sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
+    if (!ast) return NULL;
+
     sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results", NULL, 0, ast->is_explain);
     if (!final_ds || !final_ds->is_virtual) return NULL;
     return final_ds->rs;

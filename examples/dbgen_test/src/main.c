@@ -82,7 +82,7 @@ sql_ctx_column_t *my_resolve_col(sql_vm_t *vm, const char *table, const char *co
     else if (strcasecmp(table, "partsupp") == 0) { BIND_COL("partkey", SQL_TYPE_INT, col_partsupp_partkey) BIND_COL("suppkey", SQL_TYPE_INT, col_partsupp_suppkey) BIND_COL("availqty", SQL_TYPE_INT, col_partsupp_availqty) BIND_COL("supplycost", SQL_TYPE_DOUBLE, col_partsupp_supplycost) BIND_COL("comment", SQL_TYPE_STRING, col_partsupp_comment) }
     else if (strcasecmp(table, "customer") == 0) { BIND_COL("custkey", SQL_TYPE_INT, col_customer_custkey) BIND_COL("name", SQL_TYPE_STRING, col_customer_name) BIND_COL("address", SQL_TYPE_STRING, col_customer_address) BIND_COL("nationkey", SQL_TYPE_INT, col_customer_nationkey) BIND_COL("phone", SQL_TYPE_STRING, col_customer_phone) BIND_COL("acctbal", SQL_TYPE_DOUBLE, col_customer_acctbal) BIND_COL("mktsegment", SQL_TYPE_STRING, col_customer_mktsegment) BIND_COL("comment", SQL_TYPE_STRING, col_customer_comment) }
     else if (strcasecmp(table, "orders") == 0) { BIND_COL("orderkey", SQL_TYPE_INT, col_orders_orderkey) BIND_COL("custkey", SQL_TYPE_INT, col_orders_custkey) BIND_COL("orderstatus", SQL_TYPE_STRING, col_orders_orderstatus) BIND_COL("totalprice", SQL_TYPE_DOUBLE, col_orders_totalprice) BIND_COL("orderdate", SQL_TYPE_STRING, col_orders_orderdate) BIND_COL("orderpriority", SQL_TYPE_STRING, col_orders_orderpriority) BIND_COL("clerk", SQL_TYPE_STRING, col_orders_clerk) BIND_COL("shippriority", SQL_TYPE_INT, col_orders_shippriority) BIND_COL("comment", SQL_TYPE_STRING, col_orders_comment) }
-    else if (strcasecmp(table, "lineitem") == 0) { BIND_COL("orderkey", SQL_TYPE_INT, col_lineitem_orderkey) BIND_COL("partkey", SQL_TYPE_INT, col_lineitem_partkey) BIND_COL("suppkey", SQL_TYPE_INT, col_lineitem_suppkey) BIND_COL("linenumber", SQL_TYPE_INT, col_lineitem_linenumber) BIND_COL("quantity", SQL_TYPE_DOUBLE, col_lineitem_quantity) BIND_COL("extendedprice", SQL_TYPE_DOUBLE, col_lineitem_extendedprice) BIND_COL("discount", SQL_TYPE_DOUBLE, col_lineitem_discount) BIND_COL("tax", SQL_TYPE_DOUBLE, col_lineitem_tax) BIND_COL("returnflag", SQL_TYPE_STRING, col_lineitem_returnflag) BIND_COL("linestatus", SQL_TYPE_STRING, col_lineitem_linestatus) BIND_COL("shipdate", SQL_TYPE_STRING, col_lineitem_shipdate) BIND_COL("commitdate", SQL_TYPE_STRING, col_lineitem_commitdate) BIND_COL("receiptdate", SQL_TYPE_STRING, col_lineitem_receiptdate) BIND_COL("shipinstruct", SQL_TYPE_STRING, col_lineitem_shipinstruct) BIND_COL("shipmode", SQL_TYPE_STRING, col_lineitem_shipmode) BIND_COL("comment", SQL_TYPE_STRING, col_lineitem_comment) }
+    else if (strcasecmp(table, "lineitem") == 0) { BIND_COL("orderkey", SQL_TYPE_INT, col_lineitem_orderkey) BIND_COL("partkey", SQL_TYPE_INT, col_lineitem_partkey) BIND_COL("suppkey", SQL_TYPE_INT, col_lineitem_suppkey) BIND_COL("linenumber", SQL_TYPE_INT, col_lineitem_linenumber) BIND_COL("quantity", SQL_TYPE_DOUBLE, col_lineitem_quantity) BIND_COL("extendedprice", SQL_TYPE_DOUBLE, col_lineitem_extendedprice) BIND_COL("discount", SQL_TYPE_DOUBLE, col_lineitem_discount) BIND_COL("tax", SQL_TYPE_DOUBLE, col_lineitem_tax) BIND_COL("returnflag", SQL_TYPE_STRING, col_lineitem_returnflag) BIND_COL("linestatus", SQL_TYPE_STRING, col_lineitem_linestatus) BIND_COL("shipdate", SQL_TYPE_STRING, col_lineitem_shipdate) BIND_COL("commitdate", SQL_TYPE_STRING, col_lineitem_commitdate) BIND_COL("receiptdate", SQL_TYPE_STRING, col_lineitem_receiptdate) BIND_COL("shipinstruct", SQL_TYPE_STRING, col_lineitem_shipmode) BIND_COL("comment", SQL_TYPE_STRING, col_lineitem_comment) }
     return NULL;
 }
 
@@ -105,8 +105,9 @@ void parse_tpch_row(int type, char *line, void *row) {
 typedef struct {
     io_in_t *in;
     char filename[256];
-    void *current_row;
     int table_type;
+    aml_pool_t *volatile_pool;
+    char *current_raw_line;
 } tpch_stream_t;
 
 bool tpch_stream_next(sql_dataset_t *ds, void **out_row) {
@@ -116,14 +117,35 @@ bool tpch_stream_next(sql_dataset_t *ds, void **out_row) {
     io_record_t *rec;
     while ((rec = io_in_advance(s->in)) != NULL) {
         if (rec->length < 5) continue;
-
         rec->record[rec->length] = '\0';
-        parse_tpch_row(s->table_type, rec->record, s->current_row);
 
-        *out_row = s->current_row;
+        aml_pool_clear(s->volatile_pool); // Instant O(1) Memory Reset
+
+        // 1. Save the pristine raw text line in case the VM needs to clone it
+        s->current_raw_line = aml_pool_strdup(s->volatile_pool, rec->record);
+
+        // 2. Make a working copy for `strsep` to safely destroy
+        char *working_line = aml_pool_strdup(s->volatile_pool, rec->record);
+
+        void *new_row = aml_pool_zalloc(s->volatile_pool, struct_sizes[s->table_type]);
+        parse_tpch_row(s->table_type, working_line, new_row); // Pass the working copy!
+
+        *out_row = new_row;
         return true;
     }
     return false;
+}
+
+
+void *tpch_clone_row(sql_dataset_t *ds, void *row, aml_pool_t *persistent_pool) {
+    tpch_stream_t *s = (tpch_stream_t *)ds->stream_state;
+
+    // The VM says "Save this row!" -> We re-parse it into the persistent pool
+    void *cloned_row = aml_pool_zalloc(persistent_pool, struct_sizes[s->table_type]);
+    char *persistent_line = aml_pool_strdup(persistent_pool, s->current_raw_line);
+
+    parse_tpch_row(s->table_type, persistent_line, cloned_row);
+    return cloned_row;
 }
 
 void tpch_stream_rewind(sql_dataset_t *ds) {
@@ -135,6 +157,7 @@ void tpch_stream_rewind(sql_dataset_t *ds) {
 void tpch_stream_close(sql_dataset_t *ds) {
     tpch_stream_t *s = (tpch_stream_t *)ds->stream_state;
     if (s->in) io_in_destroy(s->in);
+    if (s->volatile_pool) aml_pool_destroy(s->volatile_pool);
 }
 
 // --- 6. INDEX IMPLEMENTATIONS ---
@@ -356,10 +379,10 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
         tpch_stream_t *stream = aml_pool_zalloc(vm->pool, sizeof(tpch_stream_t));
         strcpy(stream->filename, filepath);
         stream->table_type = t_idx;
-        stream->current_row = aml_pool_zalloc(vm->pool, struct_sizes[t_idx]);
+        stream->volatile_pool = aml_pool_init(1024 * 64); // Fast pool for the stream
 
         sql_dataset_t *ds = sql_vm_create_streaming_dataset(vm, stream, tpch_stream_next, tpch_stream_rewind, tpch_stream_close);
-
+        ds->clone_row = tpch_clone_row;
         ds->count = file_size;
         return ds;
     }
@@ -506,7 +529,21 @@ int main(int argc, char **argv) {
         "    JOIN region r ON n.regionkey = r.regionkey "
         ") AS ranked_nations "
         "WHERE ranked_nations.rn <= 2 "
-        "ORDER BY Region ASC, rn ASC"
+        "ORDER BY Region ASC, rn ASC",
+
+        // Test 17: Interval Math! (Implicitly casts shipdate and commitdate)
+        "SELECT l.orderkey, l.shipdate, l.commitdate "
+        "FROM lineitem l "
+        "WHERE l.commitdate < l.shipdate - INTERVAL '30' DAY "
+        "ORDER BY l.orderkey DESC "
+        "LIMIT 10",
+
+        // Test 18: Date Extraction & Grouping
+        "SELECT EXTRACT(YEAR FROM l.shipdate) AS ship_year, COUNT(*) AS items "
+        "FROM lineitem l "
+        "GROUP BY ship_year "
+        "ORDER BY items DESC "
+        "LIMIT 5"
     };
 
     size_t num_queries = sizeof(queries) / sizeof(queries[0]);

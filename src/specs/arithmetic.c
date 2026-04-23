@@ -172,7 +172,7 @@ sql_node_t *sql_datetime_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_datetime_init(ctx, adjusted_time, false);
 }
 
-// Subtract two datetime values (returns seconds between them)
+// Subtract two datetime values (returns days between them)
 sql_node_t *sql_datetime_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right_node = sql_eval(ctx, f->parameters[1]);
@@ -183,7 +183,9 @@ sql_node_t *sql_datetime_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     }
 
     double seconds_diff = difftime(left_node->value.epoch, right_node->value.epoch);
-    return sql_double_init(ctx, seconds_diff, false);
+
+    // Convert seconds to fractional days to match standard SQL behavior
+    return sql_double_init(ctx, seconds_diff / 86400.0, false);
 }
 
 // Add an interval string to a datetime
@@ -248,6 +250,41 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
     if (f->num_parameters < 2) {
         sql_ctx_error(ctx, "Arithmetic operations require at least two parameters.");
         return NULL;
+    }
+
+    // --- FIX 3: The Commutative Trap (e.g., 30 + shipdate -> shipdate + 30) ---
+    // If we are adding, and the right side is a DATETIME but the left is not, swap them!
+    if (f->num_parameters == 2 && strcmp(spec->name, "+") == 0) {
+        if (f->parameters[1]->data_type == SQL_TYPE_DATETIME &&
+            f->parameters[0]->data_type != SQL_TYPE_DATETIME) {
+
+            sql_node_t *temp = f->parameters[0];
+            f->parameters[0] = f->parameters[1];
+            f->parameters[1] = temp;
+        }
+    }
+
+    // --- FIX 1: Implicit Coercion for STRING (+|-) INTERVAL ---
+    if (f->parameters[0]->data_type == SQL_TYPE_STRING &&
+        f->parameters[1]->type == SQL_COMPOUND_LITERAL &&
+        f->parameters[1]->token &&
+        strncasecmp(f->parameters[1]->token, "INTERVAL", 8) == 0) {
+
+        f->parameters[0] = sql_convert(ctx, f->parameters[0], SQL_TYPE_DATETIME);
+    }
+
+    // --- FIX 2: Implicit Coercion for DATETIME - STRING (Date Diffing) ---
+    if (f->parameters[0]->data_type == SQL_TYPE_DATETIME &&
+        f->parameters[1]->data_type == SQL_TYPE_STRING) {
+
+        bool is_interval = (f->parameters[1]->type == SQL_COMPOUND_LITERAL &&
+                            f->parameters[1]->token &&
+                            strncasecmp(f->parameters[1]->token, "INTERVAL", 8) == 0);
+
+        // If it's a regular string like '1995-04-13', cast it to DATETIME
+        if (!is_interval) {
+            f->parameters[1] = sql_convert(ctx, f->parameters[1], SQL_TYPE_DATETIME);
+        }
     }
 
     sql_ctx_spec_update_t *update = (sql_ctx_spec_update_t *)aml_pool_zalloc(ctx->pool, sizeof(sql_ctx_spec_update_t));
