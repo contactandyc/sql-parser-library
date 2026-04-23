@@ -6,6 +6,7 @@
 #include "sql-parser-library/sql_compiler.h"
 #include "sql-parser-library/sql_binder.h"
 #include "the-macro-library/macro_map.h"
+#include "a-memory-library/aml_buffer.h" // --- ADDED ---
 #include <string.h>
 #include <stdio.h>
 
@@ -285,9 +286,6 @@ static void optimize_indexes_for_table(sql_ctx_t *ctx, sql_table_request_t *req,
         memcpy(req->index_exact_values, best_exact, matched_cols * sizeof(sql_node_t *));
         memcpy(req->index_min_values, best_min, matched_cols * sizeof(sql_node_t *));
         memcpy(req->index_max_values, best_max, matched_cols * sizeof(sql_node_t *));
-
-        VM_DEBUG("[VM-OPT] Assigned %s Index on (%s...) for '%s' (Matched %zu prefix columns)\n",
-                 idx->type == INDEX_TYPE_BTREE ? "B-Tree" : "Hash", idx->column_names[0], ds->alias, matched_cols);
     }
 }
 
@@ -704,13 +702,23 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     // --- EXPLAIN MODE INTERCEPT ---
     if (explain_mode) {
-        printf("\n=== EXPLAIN PLAN FOR: %s ===\n", forced_alias);
-        sql_print_plan(ctx, plan);
-        printf("\n--- JOIN EXECUTION ORDER ---\n");
-        for (int i = 0; i < num_datasets; i++) {
-            printf("%d. %s (%s)\n", i + 1, datasets[exec_order[i]]->table_name, datasets[exec_order[i]]->alias);
+        aml_buffer_t *buf = aml_buffer_pool_init(ctx->pool, 2048);
+
+        for (size_t c = num_parent_ctes; c < num_available_ctes; c++) {
+            if (available_ctes[c]->rs && available_ctes[c]->rs->explain_output) {
+                aml_buffer_appends(buf, available_ctes[c]->rs->explain_output);
+                aml_buffer_appends(buf, "\n");
+            }
         }
-        printf("===============================\n");
+
+        aml_buffer_appendf(buf, "=== EXPLAIN PLAN FOR: %s ===\n", forced_alias);
+        sql_print_plan(buf, ctx, plan);
+        aml_buffer_appendf(buf, "\n--- JOIN EXECUTION ORDER ---\n");
+        for (int i = 0; i < num_datasets; i++) {
+            aml_buffer_appendf(buf, "%d. %s (%s)\n", i + 1, datasets[exec_order[i]]->table_name, datasets[exec_order[i]]->alias);
+        }
+        aml_buffer_appendf(buf, "===============================\n");
+        aml_buffer_appendc(buf, '\0');
 
         ctx->catalog_state = old_catalog_state;
         ctx->row = old_row;
@@ -722,13 +730,14 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         out_ds->rs = sql_result_set_init(ctx->pool, 0, NULL, 0, NULL);
         out_ds->alias = forced_alias;
 
-        // --- FIX: POPULATE EXPLAIN SCHEMA METADATA ---
         out_ds->num_columns = compiled->num_projections;
         out_ds->column_names = compiled->display_names;
         out_ds->column_types = aml_pool_alloc(ctx->pool, out_ds->num_columns * sizeof(sql_data_type_t));
         for (size_t c = 0; c < out_ds->num_columns; c++) {
             out_ds->column_types[c] = compiled->projections[c]->data_type;
         }
+
+        out_ds->rs->explain_output = aml_buffer_data(buf);
 
         return out_ds;
     }

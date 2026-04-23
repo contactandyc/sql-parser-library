@@ -27,9 +27,12 @@ sql_result_set_t *sql_result_set_init(aml_pool_t *pool, size_t num_columns, cons
     sql_result_set_t *rs = aml_pool_zalloc(pool, sizeof(sql_result_set_t));
     rs->pool = pool;
     rs->num_columns = num_columns;
-    rs->column_names = column_names; // <-- NEW
+    rs->column_names = column_names;
     rs->num_sort_keys = num_sort_keys;
     rs->sort_directions = sort_directions;
+
+    // --- Explicit NULL ---
+    rs->explain_output = NULL;
 
     rs->capacity = 16;
     rs->count = 0;

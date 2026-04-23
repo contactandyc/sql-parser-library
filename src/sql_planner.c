@@ -14,30 +14,22 @@
 #define MAX_PLAN_TABLES 16
 #define MAX_COLS_PER_TABLE 128
 
-// Internal structure used during the AST walk to collect columns safely
 typedef struct {
     sql_table_request_t *req;
     const char *temp_cols[MAX_COLS_PER_TABLE];
     size_t temp_count;
 } plan_table_state_t;
 
-// Helper: Safely add a column name to a table's temporary list (with deduplication)
 static void add_required_column(plan_table_state_t *state, const char *col_name) {
     if (!state || !col_name || state->req->needs_all_columns) return;
+    if (state->temp_count >= MAX_COLS_PER_TABLE) return;
 
-    if (state->temp_count >= MAX_COLS_PER_TABLE) return; // Failsafe
-
-    // Deduplicate
     for (size_t i = 0; i < state->temp_count; i++) {
-        if (strcasecmp(state->temp_cols[i], col_name) == 0) {
-            return; // Already tracked
-        }
+        if (strcasecmp(state->temp_cols[i], col_name) == 0) return;
     }
-
     state->temp_cols[state->temp_count++] = col_name;
 }
 
-// Recursive AST walker to extract physical column names
 static void extract_columns_from_ast(sql_ast_node_t *node, plan_table_state_t *states, size_t num_states) {
     if (!node) return;
 
@@ -57,14 +49,11 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
     if (!ast) return NULL;
 
     sql_execution_plan_t *plan = aml_pool_zalloc(ctx->pool, sizeof(sql_execution_plan_t));
-
     plan_table_state_t states[MAX_PLAN_TABLES] = {0};
     size_t num_states = 0;
-
     sql_table_request_t *req_head = NULL;
     sql_table_request_t *req_tail = NULL;
 
-    // 1. Initialize Base Table Request
     if (ast->table || ast->subquery) {
         sql_table_request_t *base_req = aml_pool_zalloc(ctx->pool, sizeof(sql_table_request_t));
 
@@ -87,7 +76,6 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
         req_head = req_tail = base_req;
     }
 
-    // 2. Initialize Table Requests AND Join Plans for JOINs
     sql_join_plan_t *join_head = NULL;
     sql_join_plan_t *join_tail = NULL;
 
@@ -139,11 +127,8 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
 
     plan->table_requests = req_head;
     plan->joins = join_head;
-
-    // 3. Assign Filters (Phase 1: Everything is Global)
     plan->global_filters = ast->where_clause;
 
-    // 4. Walk the entire AST to harvest required columns
     extract_columns_from_ast(ast->columns, states, num_states);
     extract_columns_from_ast(ast->where_clause, states, num_states);
     extract_columns_from_ast(ast->group_by, states, num_states);
@@ -163,7 +148,6 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
         ob = ob->next;
     }
 
-    // 5. Finalize the arrays dynamically from the pool
     for (size_t i = 0; i < num_states; i++) {
         plan_table_state_t *st = &states[i];
         if (st->req->needs_all_columns) continue;
@@ -179,8 +163,6 @@ sql_execution_plan_t *sql_plan_query(sql_ctx_t *ctx, sql_select_t *ast) {
 
     return plan;
 }
-
-// --- PREDICATE PUSHDOWN LOGIC ---
 
 static void check_table_dependency(sql_ast_node_t *node, int *dep_index) {
     if (!node || *dep_index == -1) return;
@@ -217,7 +199,6 @@ static void append_table_filter(sql_ctx_t *ctx, sql_table_request_t *req, sql_as
     }
 }
 
-// FIX: Passed down safe_to_pushdown array to protect outer join filters
 static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan, sql_ast_node_t *node, bool *safe_to_pushdown) {
     if (!node) return NULL;
 
@@ -235,7 +216,6 @@ static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan,
         int dep = -2;
         check_table_dependency(node, &dep);
 
-        // FIX: Ensure the table dependency is actually allowed to evaluate filters locally!
         if (dep >= 0 && safe_to_pushdown[dep]) {
             sql_table_request_t *req = plan->table_requests;
             while (req) {
@@ -254,18 +234,14 @@ static sql_ast_node_t *pushdown_node(sql_ctx_t *ctx, sql_execution_plan_t *plan,
 void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     if (!plan || !plan->global_filters) return;
 
-    // --- FIX: Outer Join Protection Matrix ---
     bool safe_to_pushdown[MAX_PLAN_TABLES];
     for (int i = 0; i < MAX_PLAN_TABLES; i++) safe_to_pushdown[i] = true;
 
     sql_join_plan_t *jp = plan->joins;
     while (jp) {
-        // If a table is on the right side of a LEFT/FULL join, it might be padded with NULLs.
-        // We cannot evaluate WHERE clauses early on this table.
         if (jp->join_type == JOIN_LEFT || jp->join_type == JOIN_FULL) {
             safe_to_pushdown[jp->right_table_index] = false;
         }
-        // If it's a RIGHT join, the left side (all tables before it) are nullable!
         if (jp->join_type == JOIN_RIGHT || jp->join_type == JOIN_FULL) {
             for (int i = 0; i < jp->right_table_index; i++) {
                 safe_to_pushdown[i] = false;
@@ -277,48 +253,49 @@ void sql_pushdown_filters(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     plan->global_filters = pushdown_node(ctx, plan, plan->global_filters, safe_to_pushdown);
 }
 
-void sql_print_plan(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
+// --- UPDATED: Prints securely to aml_buffer_t ---
+void sql_print_plan(aml_buffer_t *buf, sql_ctx_t *ctx, sql_execution_plan_t *plan) {
     if (!plan) return;
 
-    printf("--- 1. DATA ACCESS ---\n");
+    aml_buffer_appendf(buf, "--- 1. DATA ACCESS ---\n");
     sql_table_request_t *req = plan->table_requests;
     while (req) {
-        printf("TABLE SCAN [Index %d]: %s", req->table_index, req->table_name);
-        if (req->alias) printf(" AS %s", req->alias);
+        aml_buffer_appendf(buf, "TABLE SCAN [Index %d]: %s", req->table_index, req->table_name);
+        if (req->alias) aml_buffer_appendf(buf, " AS %s", req->alias);
 
         if (req->scan_strategy == SCAN_INDEX_LOOKUP && req->index_to_use) {
-            printf("\n  Strategy: %s Index Lookup on (", req->index_to_use->type == INDEX_TYPE_BTREE ? "B-Tree" : "Hash");
+            aml_buffer_appendf(buf, "\n  Strategy: %s Index Lookup on (", req->index_to_use->type == INDEX_TYPE_BTREE ? "B-Tree" : "Hash");
             for(size_t c=0; c < req->num_index_values; c++) {
-                printf("%s%s", req->index_to_use->column_names[c], c < req->num_index_values - 1 ? ", " : "");
+                aml_buffer_appendf(buf, "%s%s", req->index_to_use->column_names[c], c < req->num_index_values - 1 ? ", " : "");
             }
-            printf(")\n");
+            aml_buffer_appendf(buf, ")\n");
         } else {
-            printf("\n  Strategy: Full Table Scan\n");
+            aml_buffer_appendf(buf, "\n  Strategy: Full Table Scan\n");
         }
 
-        printf("  Columns:  ");
+        aml_buffer_appendf(buf, "  Columns:  ");
         if (req->needs_all_columns) {
-            printf("* (All)\n");
+            aml_buffer_appendf(buf, "* (All)\n");
         } else if (req->num_required_columns == 0) {
-            printf("None (Row Count)\n");
+            aml_buffer_appendf(buf, "None (Row Count)\n");
         } else {
             for (size_t i = 0; i < req->num_required_columns; i++) {
-                printf("%s%s", req->required_columns[i], i < req->num_required_columns - 1 ? ", " : "");
+                aml_buffer_appendf(buf, "%s%s", req->required_columns[i], i < req->num_required_columns - 1 ? ", " : "");
             }
-            printf("\n");
+            aml_buffer_appendf(buf, "\n");
         }
 
         if (req->table_filters) {
             char *filter_str = sql_ast_to_string(ctx, req->table_filters);
-            printf("  Local Filters (Pushed Down): %s\n", filter_str);
+            aml_buffer_appendf(buf, "  Local Filters (Pushed Down): %s\n", filter_str);
         }
 
         req = req->next;
-        if (req) printf("\n");
+        if (req) aml_buffer_appendf(buf, "\n");
     }
 
     if (plan->joins) {
-        printf("\n--- 2. JOINS ---\n");
+        aml_buffer_appendf(buf, "--- 2. JOINS ---\n");
         sql_join_plan_t *jp = plan->joins;
         while (jp) {
             const char *type_str = jp->join_type == JOIN_LEFT ? "LEFT" :
@@ -326,19 +303,20 @@ void sql_print_plan(sql_ctx_t *ctx, sql_execution_plan_t *plan) {
                                    jp->join_type == JOIN_FULL ? "FULL OUTER" : "INNER";
             const char *algo_str = jp->algorithm == JOIN_ALGO_HASH_JOIN ? "Hash Join" : "Nested Loop";
 
-            printf("JOIN to [Index %d] (%s via %s)\n", jp->right_table_index, type_str, algo_str);
+            aml_buffer_appendf(buf, "JOIN to [Index %d] (%s via %s)\n", jp->right_table_index, type_str, algo_str);
 
             if (jp->on_condition) {
                 char *on_str = sql_ast_to_string(ctx, jp->on_condition);
-                printf("  Condition: %s\n", on_str);
+                aml_buffer_appendf(buf, "  Condition: %s\n", on_str);
             }
             jp = jp->next;
         }
+        aml_buffer_appendf(buf, "\n");
     }
 
     if (plan->global_filters) {
-        printf("\n--- 3. GLOBAL FILTERS ---\n");
+        aml_buffer_appendf(buf, "--- 3. GLOBAL FILTERS ---\n");
         char *global_str = sql_ast_to_string(ctx, plan->global_filters);
-        printf("Residual filters applied after joins: %s\n", global_str);
+        aml_buffer_appendf(buf, "Residual filters applied after joins: %s\n", global_str);
     }
 }

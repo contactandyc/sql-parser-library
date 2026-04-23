@@ -159,7 +159,6 @@ void **int_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t 
 
     int target = vals[0]->value.int_value;
 
-    // Standard Binary Search
     int low = 0, high = idx->count - 1;
     int first_match = -1;
 
@@ -167,7 +166,7 @@ void **int_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t 
         int mid = low + (high - low) / 2;
         if (idx->entries[mid].key == target) {
             first_match = mid;
-            high = mid - 1; // Keep going left to find the VERY FIRST match
+            high = mid - 1;
         } else if (idx->entries[mid].key < target) {
             low = mid + 1;
         } else {
@@ -179,7 +178,6 @@ void **int_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t 
         *out_count = 0; return NULL;
     }
 
-    // Collect all identical keys (e.g. part.mfgr has duplicates)
     size_t matches = 0;
     while (first_match + matches < idx->count && idx->entries[first_match + matches].key == target) {
         idx->result_buffer[matches] = idx->entries[first_match + matches].row;
@@ -218,7 +216,7 @@ void **str_index_lookup(void *state, sql_node_t **vals, size_t num_vals, size_t 
         int cmp = strcmp(idx->entries[mid].key, target);
         if (cmp == 0) {
             first_match = mid;
-            high = mid - 1; // Find the earliest duplicate
+            high = mid - 1;
         } else if (cmp < 0) {
             low = mid + 1;
         } else {
@@ -502,7 +500,9 @@ int main(int argc, char **argv) {
             sql_select_t *query_ast = sql_parse_query(&context, tokens, token_count);
 
             sql_result_set_t *rs = sql_vm_execute(vm, query_ast);
-            if (!rs) {
+            if (rs && rs->explain_output) {
+                printf("%s\n", rs->explain_output);
+            } else if (!rs) {
                 printf("\nEXPLAIN failed.\n");
                 sql_ctx_print_messages(&context);
             }
