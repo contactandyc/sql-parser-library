@@ -15,7 +15,6 @@ sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
     return node;
 }
 
-// Recursively walks the compiled expression trees to assign aggregate indexes
 static void collect_aggregates(sql_node_t *node, sql_node_t **agg_array, size_t *count) {
     if (!node) return;
 
@@ -69,7 +68,10 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // 3. Sorting
+    // --- NEW: 3. Compile HAVING ---
+    compiled->having_filter = sql_compile_expression(ctx, ast->having_clause);
+
+    // 4. Sorting
     size_t num_sorts = 0;
     sql_order_by_t *curr_ob = ast->order_by;
     while (curr_ob) { num_sorts++; curr_ob = curr_ob->next; }
@@ -87,13 +89,19 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // 4. Map the Aggregates
-    sql_node_t *agg_buffer[128]; // Safe upper bound for a single query
+    // 5. Map the Aggregates (Now including HAVING!)
+    sql_node_t *agg_buffer[128];
     size_t agg_count = 0;
 
     for (size_t i = 0; i < compiled->num_projections; i++) {
         collect_aggregates(compiled->projections[i], agg_buffer, &agg_count);
     }
+
+    // --- NEW: Hunt for aggregates in the HAVING clause ---
+    if (compiled->having_filter) {
+        collect_aggregates(compiled->having_filter, agg_buffer, &agg_count);
+    }
+
     for (size_t i = 0; i < compiled->num_sort_keys; i++) {
         collect_aggregates(compiled->sort_exprs[i], agg_buffer, &agg_count);
     }

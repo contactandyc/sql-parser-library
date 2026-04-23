@@ -84,15 +84,14 @@ sql_ctx_column_t *my_dynamic_catalog(sql_ctx_t *ctx, const char *table_name, con
 // --- 2. MACRO MAP GROUPING ENGINE ---
 
 typedef struct {
-    macro_map_t link;            // MUST BE FIRST!
+    macro_map_t link;
     sql_node_t **group_keys;
     size_t num_keys;
 
     void **agg_states;
-    void **first_row_set;        // THE FIX: Snapshot of the raw row pointers
+    void **first_row_set;
 } group_node_t;
 
-// Need the comparator we used in result_sets
 static int compare_sql_nodes(sql_node_t *a, sql_node_t *b) {
     if (a->is_null && b->is_null) return 0;
     if (a->is_null) return -1; if (b->is_null) return 1;
@@ -116,7 +115,6 @@ static int group_node_cmp(const group_node_t *a, const group_node_t *b) {
 macro_map_insert(group_map_insert, group_node_t, group_node_cmp);
 macro_map_find(group_map_find, group_node_t, group_node_cmp);
 
-// Deep copy evaluated nodes for hash map stability
 sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
     sql_node_t *dst = aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));
     dst->data_type = src->data_type;
@@ -139,6 +137,7 @@ int main(int argc, char **argv) {
         "JOIN orders o ON u.id = o.user_id "
         "WHERE o.status = 'shipped' "
         "GROUP BY customer "
+        "HAVING SUM(o.total) > 500 " // Filters out David
         "ORDER BY lifetime_value DESC";
 
     printf("Executing Query:\n%s\n\n", query_str);
@@ -215,7 +214,6 @@ int main(int argc, char **argv) {
                 if (!active_group) {
                     active_group = aml_pool_zalloc(pool, sizeof(group_node_t));
 
-                    // --- SNAPSHOT RAW ROW SO NON-AGGREGATE COLUMNS RESOLVE IN PASS 2 ---
                     active_group->first_row_set = aml_pool_alloc(pool, 2 * sizeof(void *));
                     active_group->first_row_set[0] = current_row_set[0];
                     active_group->first_row_set[1] = current_row_set[1];
@@ -274,7 +272,13 @@ int main(int argc, char **argv) {
             group_node_t *group = (group_node_t *)p;
 
             context.current_agg_states = group->agg_states;
-            context.row = group->first_row_set; // <--- RESTORE THE SNAPSHOT!
+            context.row = group->first_row_set;
+
+            // --- EVALUATE HAVING FILTER ---
+            if (compiled->having_filter) {
+                sql_node_t *res = sql_eval(&context, compiled->having_filter);
+                if (!res || res->is_null || !res->value.bool_value) continue;
+            }
 
             sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
         }
@@ -282,7 +286,16 @@ int main(int argc, char **argv) {
         context.current_agg_states = global_group->agg_states;
         context.row = global_group->first_row_set;
 
-        sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+        // --- EVALUATE HAVING FILTER ---
+        bool pass = true;
+        if (compiled->having_filter) {
+            sql_node_t *res = sql_eval(&context, compiled->having_filter);
+            if (!res || res->is_null || !res->value.bool_value) pass = false;
+        }
+
+        if (pass) {
+            sql_result_set_append(&context, rs, compiled->projections, compiled->sort_exprs);
+        }
     }
 
     sql_result_set_sort(rs);
