@@ -26,3 +26,9 @@ examples:
     targets:
       example_table:
         - src/main.c
+  dbgen_test:
+    depends_on:
+      - https://github.com/contactandyc/the-io-library.git
+    targets:
+      dbgen_test:
+        - src/main.c

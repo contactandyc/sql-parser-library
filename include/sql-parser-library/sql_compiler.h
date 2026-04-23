@@ -27,6 +27,9 @@ typedef struct {
     sql_node_t **sort_exprs;
     int *sort_directions;
     size_t num_sort_keys;
+
+    sql_node_t *limit;
+    sql_node_t *offset;
 } sql_compiled_query_t;
 
 sql_node_t *sql_compile_expression(sql_ctx_t *ctx, struct sql_ast_node_s *ast);

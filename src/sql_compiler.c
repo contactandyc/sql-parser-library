@@ -70,7 +70,7 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // --- NEW: 3. Compile HAVING ---
+    // 3. Compile HAVING
     compiled->having_filter = sql_compile_expression(ctx, ast->having_clause);
 
     // 4. Sorting
@@ -91,7 +91,7 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // 5. Map the Aggregates (Now including HAVING!)
+    // 5. Map the Aggregates
     sql_node_t *agg_buffer[128];
     size_t agg_count = 0;
 
@@ -99,7 +99,6 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         collect_aggregates(compiled->projections[i], agg_buffer, &agg_count);
     }
 
-    // --- NEW: Hunt for aggregates in the HAVING clause ---
     if (compiled->having_filter) {
         collect_aggregates(compiled->having_filter, agg_buffer, &agg_count);
     }
@@ -115,6 +114,10 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
             compiled->agg_nodes[i] = agg_buffer[i];
         }
     }
+
+    // --- NEW: 6. Compile LIMIT and OFFSET ---
+    compiled->limit = sql_compile_expression(ctx, ast->limit);
+    compiled->offset = sql_compile_expression(ctx, ast->offset);
 
     return compiled;
 }

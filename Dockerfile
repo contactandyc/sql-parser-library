@@ -96,6 +96,22 @@ RUN set -eux; \
     ./build.sh install; \
     cd ..; \
     rm -rf "a-json-library"
+# --- Build & install the-lz4-library ---
+RUN set -eux; \
+    git clone --depth 1 --single-branch "https://github.com/contactandyc/the-lz4-library.git" "the-lz4-library"; \
+    cd "the-lz4-library"; \
+    ./build.sh clean && \
+    ./build.sh install; \
+    cd ..; \
+    rm -rf "the-lz4-library"
+# --- Build & install the-io-library ---
+RUN set -eux; \
+    git clone --depth 1 --single-branch "https://github.com/contactandyc/the-io-library.git" "the-io-library"; \
+    cd "the-io-library"; \
+    ./build.sh clean && \
+    ./build.sh install; \
+    cd ..; \
+    rm -rf "the-io-library"
 
 # --- Build & install this project --------------------------------------------
 COPY --chown=dev:dev . /workspace/sql-parser-library

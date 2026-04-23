@@ -442,4 +442,5 @@ install(FILES
 # # add_subdirectory(examples/expressions)
 # # add_subdirectory(examples/parse_sql)
 # # add_subdirectory(examples/example_table)
+# # add_subdirectory(examples/dbgen_test)
 # 

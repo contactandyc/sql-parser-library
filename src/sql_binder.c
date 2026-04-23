@@ -31,6 +31,7 @@ static sql_ctx_column_t *resolve_column(sql_ctx_t *context, query_scope_t *scope
     }
 
     const char *target_actual_table = NULL;
+    const char *target_alias = NULL;
     int target_table_index = -1;
 
     // 1. Translate alias to actual table name using scope
@@ -38,6 +39,7 @@ static sql_ctx_column_t *resolve_column(sql_ctx_t *context, query_scope_t *scope
         for (size_t i = 0; i < scope_count; i++) {
             if (strncasecmp(scope[i].alias, table_part, table_len) == 0 && scope[i].alias[table_len] == '\0') {
                 target_actual_table = scope[i].actual_table;
+                target_alias = scope[i].alias;
                 target_table_index = scope[i].table_index;
                 break;
             }
@@ -58,13 +60,14 @@ static sql_ctx_column_t *resolve_column(sql_ctx_t *context, query_scope_t *scope
     }
 
     if (target_actual_table) {
-        // We know exactly which table to ask
-        found_col = context->schema_lookup(context, target_actual_table, col_part);
+        // We know exactly which table to ask (Pass the alias, not the physical table!)
+        found_col = context->schema_lookup(context, target_alias, col_part);
         if (found_col) match_count++;
     } else if (scope_count > 0) {
         // No prefix provided. Ask EVERY table in scope to ensure no ambiguity.
         for (size_t s = 0; s < scope_count; s++) {
-            sql_ctx_column_t *col = context->schema_lookup(context, scope[s].actual_table, col_part);
+            // Pass the alias instead of the actual_table
+            sql_ctx_column_t *col = context->schema_lookup(context, scope[s].alias, col_part);
             if (col) {
                 found_col = col;
                 target_table_index = scope[s].table_index;
@@ -144,7 +147,7 @@ static bool internal_bind_query(sql_ctx_t *ctx, sql_select_t *query, bool allow_
     query_scope_t scope[MAX_TABLES_IN_QUERY];
     size_t scope_count = 0;
 
-    // THE FIX: Sync Base Table with Planner index logic
+    // Sync Base Table with Planner index logic
     if (query->table || query->subquery) {
         if (query->table) {
             scope[scope_count].actual_table = query->table;
@@ -157,7 +160,7 @@ static bool internal_bind_query(sql_ctx_t *ctx, sql_select_t *query, bool allow_
         scope_count++;
     }
 
-    // THE FIX: Sync Join Tables with Planner index logic
+    // Sync Join Tables with Planner index logic
     sql_join_t *j = query->joins;
     while (j && scope_count < MAX_TABLES_IN_QUERY) {
         if (j->table) {
