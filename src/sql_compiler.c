@@ -50,7 +50,17 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         curr_col = ast->columns;
         for (size_t i = 0; i < num_projs; i++) {
             compiled->projections[i] = sql_compile_expression(ctx, curr_col);
-            compiled->display_names[i] = curr_col->alias ? curr_col->alias : (curr_col->value ? curr_col->value : "expr");
+
+            // --- FIX: Strip table prefixes from physical column names for Virtual Tables ---
+            if (curr_col->alias) {
+                compiled->display_names[i] = curr_col->alias;
+            } else if (curr_col->value) {
+                const char *dot = strchr(curr_col->value, '.');
+                compiled->display_names[i] = dot ? dot + 1 : curr_col->value;
+            } else {
+                compiled->display_names[i] = "expr";
+            }
+
             curr_col = curr_col->next;
         }
     }
@@ -115,7 +125,7 @@ sql_compiled_query_t *sql_compile_query(sql_ctx_t *ctx, sql_select_t *ast) {
         }
     }
 
-    // --- NEW: 6. Compile LIMIT and OFFSET ---
+    // 6. Compile LIMIT and OFFSET
     compiled->limit = sql_compile_expression(ctx, ast->limit);
     compiled->offset = sql_compile_expression(ctx, ast->offset);
 

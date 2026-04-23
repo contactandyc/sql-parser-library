@@ -20,10 +20,17 @@ typedef enum {
 
 struct sql_select_s; // Forward declaration for recursive pointers
 
+// --- NEW: Common Table Expression (CTE) Support ---
+typedef struct sql_cte_s {
+    char *alias;
+    struct sql_select_s *query;
+    struct sql_cte_s *next;
+} sql_cte_t;
+
 typedef struct sql_join_s {
     sql_join_type_t type;
     char *table;
-    struct sql_select_s *subquery; // --- NEW: Support JOIN (SELECT ...) ---
+    struct sql_select_s *subquery;
     char *alias;
     sql_ast_node_t *on_condition;
     struct sql_join_s *next;
@@ -37,11 +44,13 @@ typedef struct sql_order_by_s {
 
 // The full top-level query structure
 typedef struct sql_select_s {
+    sql_cte_t *ctes; // --- NEW: WITH clause block ---
+
     bool is_star;
     sql_ast_node_t *columns;
 
     char *table;
-    struct sql_select_s *subquery; // --- NEW: Support FROM (SELECT ...) ---
+    struct sql_select_s *subquery;
     char *table_alias;
     sql_join_t *joins;
 

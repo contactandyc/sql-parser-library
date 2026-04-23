@@ -95,6 +95,7 @@ bool sql_ctx_is_reserved_keyword(sql_ctx_t *ctx, const char *keyword) {
 
 void sql_reserve_default_keywords(sql_ctx_t *ctx) {
     static const char *sql_keywords[] = {
+        "WITH", // --- ADDED WITH ---
         "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
         "JOIN", "ON", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
         "GROUP", "HAVING", "LIMIT", "OFFSET",

@@ -118,7 +118,6 @@ static sql_join_t *parse_join_list(sql_ctx_t *context, sql_token_t **tokens, siz
         sql_join_t *node = aml_pool_zalloc(context->pool, sizeof(sql_join_t));
         node->type = jtype;
 
-        // --- NEW: Parse nested Subquery OR standard Table ---
         if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
             (*pos)++; // Consume '('
             node->subquery = parse_select_query(context, tokens, pos, end_pos);
@@ -203,13 +202,63 @@ static sql_order_by_t *parse_order_by_list(sql_ctx_t *context, sql_token_t **tok
 static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count) {
     if (*pos >= token_count) return NULL;
 
-    if (tokens[*pos]->type != SQL_KEYWORD || strcasecmp(tokens[*pos]->token, "SELECT") != 0) {
-        sql_ctx_error(context, "Query must start with SELECT");
+    sql_select_t *query = aml_pool_zalloc(context->pool, sizeof(sql_select_t));
+
+    // --- NEW: Parse CTE WITH clause ---
+    if (tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "WITH") == 0) {
+        (*pos)++;
+        sql_cte_t *cte_head = NULL, *cte_tail = NULL;
+
+        while (*pos < token_count) {
+            sql_cte_t *cte = aml_pool_zalloc(context->pool, sizeof(sql_cte_t));
+
+            if (tokens[*pos]->type == SQL_IDENTIFIER) {
+                cte->alias = aml_pool_strdup(context->pool, tokens[*pos]->token);
+                (*pos)++;
+            } else {
+                sql_ctx_error(context, "Expected identifier after WITH");
+                return NULL;
+            }
+
+            if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "AS") == 0) {
+                (*pos)++;
+            } else {
+                sql_ctx_error(context, "Expected AS after CTE alias");
+                return NULL;
+            }
+
+            if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
+                (*pos)++;
+                cte->query = parse_select_query(context, tokens, pos, token_count);
+
+                if (*pos < token_count && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                    (*pos)++;
+                } else {
+                    sql_ctx_error(context, "Expected closing parenthesis after CTE query");
+                    return NULL;
+                }
+            } else {
+                sql_ctx_error(context, "Expected '(' after CTE AS");
+                return NULL;
+            }
+
+            if (!cte_head) cte_head = cte_tail = cte;
+            else { cte_tail->next = cte; cte_tail = cte; }
+
+            if (*pos < token_count && tokens[*pos]->type == SQL_COMMA) {
+                (*pos)++; // Move to next CTE
+            } else {
+                break; // Exit loop, must be SELECT next
+            }
+        }
+        query->ctes = cte_head;
+    }
+
+    if (*pos >= token_count || tokens[*pos]->type != SQL_KEYWORD || strcasecmp(tokens[*pos]->token, "SELECT") != 0) {
+        sql_ctx_error(context, "Query must start with SELECT (or WITH)");
         return NULL;
     }
-    (*pos)++;
-
-    sql_select_t *query = aml_pool_zalloc(context->pool, sizeof(sql_select_t));
+    (*pos)++; // Consume SELECT
 
     // 1. Projections
     if (*pos < token_count && tokens[*pos]->type == SQL_OPERATOR && strcmp(tokens[*pos]->token, "*") == 0) {
@@ -224,7 +273,6 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "FROM") == 0) {
         (*pos)++;
 
-        // --- NEW: Parse nested Subquery OR standard Table ---
         if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
             (*pos)++; // Consume '('
             query->subquery = parse_select_query(context, tokens, pos, token_count);
@@ -337,6 +385,18 @@ void sql_print_query(sql_select_t *query, int depth) {
     for(int i=0; i<depth; i++) printf("  ");
     printf("--- SQL QUERY AST ---\n");
 
+    if (query->ctes) {
+        for(int i=0; i<depth; i++) printf("  ");
+        printf("WITH CTEs:\n");
+        sql_cte_t *cte = query->ctes;
+        while(cte) {
+            for(int i=0; i<depth+1; i++) printf("  ");
+            printf("%s AS:\n", cte->alias);
+            sql_print_query(cte->query, depth + 2);
+            cte = cte->next;
+        }
+    }
+
     if (query->subquery) {
         for(int i=0; i<depth; i++) printf("  ");
         printf("FROM SUBQUERY:\n");
@@ -394,9 +454,6 @@ void sql_print_query(sql_select_t *query, int depth) {
             col = col->next;
         }
     }
-
-    // [Print rest of clauses normally, omitted for brevity but logic remains same]
-    // ...
 }
 
 static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node);
@@ -417,7 +474,6 @@ static char *ast_list_to_string(sql_ctx_t *ctx, sql_ast_node_t *head) {
 }
 
 static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
-    // [Unchanged, keep your existing ast_to_string]
     if (!node) return aml_pool_strdup(ctx->pool, "");
 
     switch (node->type) {
@@ -517,11 +573,23 @@ static char *ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
     return aml_pool_strdup(ctx->pool, "");
 }
 
-
 char *sql_query_to_string(sql_ctx_t *ctx, sql_select_t *query) {
     if (!query) return NULL;
 
-    char *sql = aml_pool_strdup(ctx->pool, "SELECT ");
+    char *sql = aml_pool_strdup(ctx->pool, "");
+
+    // --- NEW: Add WITH block to string ---
+    if (query->ctes) {
+        sql = aml_pool_strdupf(ctx->pool, "WITH ");
+        sql_cte_t *cte = query->ctes;
+        while (cte) {
+            char *cte_sql = sql_query_to_string(ctx, cte->query);
+            sql = aml_pool_strdupf(ctx->pool, "%s%s AS (%s)%s", sql, cte->alias, cte_sql, cte->next ? ", " : " ");
+            cte = cte->next;
+        }
+    }
+
+    sql = aml_pool_strdupf(ctx->pool, "%sSELECT ", sql);
 
     // 1. Projections
     if (query->is_star) {

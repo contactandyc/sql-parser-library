@@ -190,29 +190,27 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
 
 // --- 7. EXECUTION ---
 int main(int argc, char **argv) {
-    // Array of progressive queries to test the engine step-by-step
-// Array of progressive queries to test the engine step-by-step
     const char *queries[] = {
-        // Test 1: Simple Scan & Filter (Verify base table scans and local filters)
+        // Test 1: Simple Scan & Filter
         "SELECT name, comment "
         "FROM region "
         "WHERE name = 'AMERICA'",
 
-        // Test 2: Joins, Sorting, Limit, and Offset (Verify your new implementation!)
+        // Test 2: Joins, Sorting, Limit, and Offset
         "SELECT n.name AS Nation, r.name AS Region "
         "FROM nation n "
         "JOIN region r ON n.regionkey = r.regionkey "
         "ORDER BY Nation ASC "
         "LIMIT 5 OFFSET 2",
 
-        // Test 3: Aggregation & Grouping (Verify hash map grouping and state initialization)
+        // Test 3: Aggregation & Grouping
         "SELECT r.name AS Region, SUM(n.nationkey) AS NationKeySum "
         "FROM nation n "
         "JOIN region r ON n.regionkey = r.regionkey "
         "GROUP BY r.name "
         "ORDER BY Region ASC",
 
-        // Test 4: Aggregation with HAVING (Verify alias resolution in HAVING clauses)
+        // Test 4: Aggregation with HAVING
         "SELECT r.name AS Region, SUM(n.nationkey) AS NationKeySum "
         "FROM nation n "
         "JOIN region r ON n.regionkey = r.regionkey "
@@ -220,7 +218,7 @@ int main(int argc, char **argv) {
         "HAVING NationKeySum > 10 "
         "ORDER BY Region DESC",
 
-        // Test 5: The 4-Table TPC-H Beast (Verify the Universal Optimizer and complex pipelines)
+        // Test 5: The 4-Table TPC-H Beast
         "SELECT n.name AS Nation, SUM(l.extendedprice * (1 - l.discount)) AS Revenue "
         "FROM part p "
         "JOIN lineitem l ON p.partkey = l.partkey "
@@ -229,7 +227,18 @@ int main(int argc, char **argv) {
         "WHERE p.mfgr = 'Manufacturer#1' "
         "GROUP BY n.name "
         "ORDER BY Revenue DESC "
-        "LIMIT 10"
+        "LIMIT 10",
+
+        // Test 6: Common Table Expressions (WITH) Support!
+        "WITH regional_nations AS ( "
+        "    SELECT n.name AS Nation, r.name AS Region, n.nationkey "
+        "    FROM nation n "
+        "    JOIN region r ON n.regionkey = r.regionkey "
+        "    WHERE r.name = 'ASIA' "
+        ") "
+        "SELECT Region, SUM(nationkey) AS SumKey "
+        "FROM regional_nations "
+        "GROUP BY Region"
     };
 
     size_t num_queries = sizeof(queries) / sizeof(queries[0]);
@@ -239,7 +248,6 @@ int main(int argc, char **argv) {
         printf("Executing Query %zu:\n%s\n", i + 1, queries[i]);
         printf("======================================================\n");
 
-        // We initialize a fresh pool and context for every query to prevent overlap/leaks
         aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
         sql_ctx_t context = {0};
         context.pool = pool;

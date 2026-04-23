@@ -24,6 +24,9 @@ typedef struct {
     size_t num_datasets;
 } vm_catalog_state_t;
 
+// Forward declaration for recursion
+static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes);
+
 // --- VIRTUAL TABLE ROUTER ---
 static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
     sql_node_t *dst = aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));
@@ -324,41 +327,99 @@ static void execute_nested_loop(sql_ctx_t *ctx, sql_compiled_query_t *compiled,
 }
 
 // --- VM EXECUTION ---
-static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias) {
+static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const char *forced_alias, sql_dataset_t **parent_ctes, size_t num_parent_ctes) {
     if (!ast) return NULL;
     sql_ctx_t *ctx = vm->ctx;
 
     VM_DEBUG("\n========================================\n");
     VM_DEBUG("[VM-INIT] Executing Sub-Tree: %s\n", forced_alias);
 
-    sql_dataset_t **datasets = aml_pool_alloc(ctx->pool, 16 * sizeof(sql_dataset_t *));
-    size_t num_datasets = 0;
+    // --- 1. EAGER-EVALUATE COMMON TABLE EXPRESSIONS (WITH) ---
+    size_t num_local_ctes = 0;
+    sql_cte_t *cte = ast->ctes;
+    while(cte) { num_local_ctes++; cte = cte->next; }
 
-    if (ast->subquery) {
-        datasets[num_datasets] = internal_execute(vm, ast->subquery, ast->table_alias ? ast->table_alias : "subquery");
-        datasets[num_datasets]->table_name = "subquery";
-        num_datasets++;
-    } else if (ast->table) {
-        datasets[num_datasets] = vm->fetch_table(vm, ast->table);
-        if (datasets[num_datasets]) {
-            datasets[num_datasets]->table_name = ast->table;
-            datasets[num_datasets]->alias = ast->table_alias ? ast->table_alias : ast->table;
-            num_datasets++;
+    size_t num_available_ctes = num_parent_ctes + num_local_ctes;
+    sql_dataset_t **available_ctes = NULL;
+
+    if (num_available_ctes > 0) {
+        available_ctes = aml_pool_alloc(ctx->pool, num_available_ctes * sizeof(sql_dataset_t *));
+        for(size_t i = 0; i < num_parent_ctes; i++) available_ctes[i] = parent_ctes[i];
+
+        size_t cte_idx = num_parent_ctes;
+        cte = ast->ctes;
+        while(cte) {
+            VM_DEBUG("[VM-INIT] Evaluating CTE '%s'\n", cte->alias);
+            sql_dataset_t *cte_ds = internal_execute(vm, cte->query, cte->alias, available_ctes, cte_idx);
+            if (!cte_ds) return NULL;
+            cte_ds->table_name = aml_pool_strdup(ctx->pool, cte->alias); // Alias is its physical schema name
+            available_ctes[cte_idx++] = cte_ds;
+            cte = cte->next;
         }
     }
 
+    sql_dataset_t **datasets = aml_pool_alloc(ctx->pool, 16 * sizeof(sql_dataset_t *));
+    size_t num_datasets = 0;
+
+    // --- BASE TABLE FETCHING ---
+    if (ast->subquery) {
+        datasets[num_datasets] = internal_execute(vm, ast->subquery, ast->table_alias ? ast->table_alias : "subquery", available_ctes, num_available_ctes);
+        datasets[num_datasets]->table_name = "subquery";
+        num_datasets++;
+    } else if (ast->table) {
+        sql_dataset_t *matched_cte = NULL;
+        for(size_t c=0; c<num_available_ctes; c++) {
+            if(strcasecmp(ast->table, available_ctes[c]->alias) == 0) {
+                matched_cte = available_ctes[c];
+                break;
+            }
+        }
+
+        if (matched_cte) {
+            VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", ast->table);
+            datasets[num_datasets] = aml_pool_alloc(ctx->pool, sizeof(sql_dataset_t));
+            *datasets[num_datasets] = *matched_cte; // Shallow copy allows independent aliases for the same memory blocks!
+            datasets[num_datasets]->alias = ast->table_alias ? ast->table_alias : matched_cte->alias;
+            num_datasets++;
+        } else {
+            datasets[num_datasets] = vm->fetch_table(vm, ast->table);
+            if (datasets[num_datasets]) {
+                datasets[num_datasets]->table_name = ast->table;
+                datasets[num_datasets]->alias = ast->table_alias ? ast->table_alias : ast->table;
+                num_datasets++;
+            }
+        }
+    }
+
+    // --- JOIN FETCHING ---
     sql_join_t *j = ast->joins;
     while (j) {
         if (j->subquery) {
-            datasets[num_datasets] = internal_execute(vm, j->subquery, j->alias ? j->alias : "subquery");
+            datasets[num_datasets] = internal_execute(vm, j->subquery, j->alias ? j->alias : "subquery", available_ctes, num_available_ctes);
             datasets[num_datasets]->table_name = "subquery";
             num_datasets++;
         } else if (j->table) {
-            datasets[num_datasets] = vm->fetch_table(vm, j->table);
-            if (datasets[num_datasets]) {
-                datasets[num_datasets]->table_name = j->table;
-                datasets[num_datasets]->alias = j->alias ? j->alias : j->table;
+            sql_dataset_t *matched_cte = NULL;
+            for(size_t c=0; c<num_available_ctes; c++) {
+                if(strcasecmp(j->table, available_ctes[c]->alias) == 0) {
+                    matched_cte = available_ctes[c];
+                    break;
+                }
+            }
+
+            if (matched_cte) {
+                VM_DEBUG("[SCHEMA] Binding CTE '%s'\n", j->table);
+                datasets[num_datasets] = aml_pool_alloc(ctx->pool, sizeof(sql_dataset_t));
+                *datasets[num_datasets] = *matched_cte;
+                datasets[num_datasets]->alias = j->alias ? j->alias : matched_cte->alias;
                 num_datasets++;
+            } else {
+                datasets[num_datasets] = vm->fetch_table(vm, j->table);
+                if (datasets[num_datasets]) {
+                    datasets[num_datasets]->table_name = j->table;
+                    datasets[num_datasets]->alias = j->alias ? j->alias : j->table;
+                    num_datasets++;
+                }
             }
         }
         j = j->next;
@@ -488,7 +549,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                 size_t mat_idx = 0;
                 void *raw_row = NULL;
 
-                // CRITICAL FIX: Save and perfectly restore ctx->row!
                 void *saved_row = ctx->row;
                 void *temp_row_set[16] = {0};
                 ctx->row = temp_row_set;
@@ -532,12 +592,9 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
                     found->rows = jr;
                 }
 
-                // CRITICAL FIX RESTORE
                 ctx->row = saved_row;
 
                 VM_DEBUG("[VM-BUILD] Completed. Indexed %zu rows.\n", build_count);
-
-                // Clear the condition since Hash probe satisfies it instantly!
                 step_join_conds[max_step] = NULL;
             }
         }
@@ -582,10 +639,8 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         if (pass) sql_result_set_append(ctx, rs, compiled->projections, compiled->sort_exprs);
     }
 
-    // Sort the dataset before truncating it via limits!
     sql_result_set_sort(rs);
 
-    // --- NEW: APPLY OFFSET AND LIMIT LOGIC ---
     size_t offset_val = 0;
     if (compiled->offset) {
         sql_node_t *off_res = sql_eval(ctx, compiled->offset);
@@ -594,7 +649,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         }
     }
 
-    size_t limit_val = rs->count; // Unbounded by default
+    size_t limit_val = rs->count;
     if (compiled->limit) {
         sql_node_t *lim_res = sql_eval(ctx, compiled->limit);
         if (lim_res && !lim_res->is_null && lim_res->data_type == SQL_TYPE_INT && lim_res->value.int_value >= 0) {
@@ -604,7 +659,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 
     if (offset_val > 0) {
         if (offset_val >= rs->count) {
-            rs->count = 0; // The offset bypassed the entire result set
+            rs->count = 0;
         } else {
             rs->count -= offset_val;
             memmove(rs->rows, rs->rows + offset_val, rs->count * sizeof(sql_result_row_t));
@@ -615,7 +670,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
         rs->count = limit_val;
     }
 
-    // --- CLEANUP ---
     for (size_t i = 0; i < num_datasets; i++) {
         if (datasets[i]->mode == DS_MODE_STREAMING && datasets[i]->close) {
             datasets[i]->close(datasets[i]);
@@ -634,7 +688,6 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     out_ds->count = rs->count;
     out_ds->rows = aml_pool_alloc(ctx->pool, rs->count * sizeof(void *));
 
-    // Only populate pointers for the truncated count!
     for(size_t i=0; i < rs->count; i++) out_ds->rows[i] = &rs->rows[i];
 
     out_ds->num_columns = compiled->num_projections;
@@ -647,7 +700,7 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
 }
 
 sql_result_set_t *sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
-    sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results");
+    sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results", NULL, 0);
     if (!final_ds || !final_ds->is_virtual) return NULL;
     return final_ds->rs;
 }
