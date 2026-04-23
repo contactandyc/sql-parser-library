@@ -271,6 +271,26 @@
     {
       "sql": "SELECT user_id, avg_order FROM (SELECT user_id, AVG(total) AS avg_order FROM orders GROUP BY user_id HAVING AVG(total) > 50) AS high_rollers ORDER BY avg_order DESC",
       "expected": "SELECT user_id, avg_order FROM (SELECT user_id, AVG(total) AS avg_order FROM orders GROUP BY user_id HAVING (50 < AVG(total))) AS high_rollers ORDER BY avg_order DESC"
+    },
+    {
+      "sql": "SELECT ROW_NUMBER() OVER () FROM t",
+      "expected": "SELECT ROW_NUMBER() OVER () FROM t"
+    },
+    {
+      "sql": "SELECT SUM(salary) OVER (PARTITION BY department) FROM employees",
+      "expected": "SELECT SUM(salary) OVER (PARTITION BY department) FROM employees"
+    },
+    {
+      "sql": "SELECT RANK() OVER (ORDER BY score DESC) FROM games",
+      "expected": "SELECT RANK() OVER (ORDER BY score DESC) FROM games"
+    },
+    {
+      "sql": "SELECT AVG(price) OVER (PARTITION BY category ORDER BY created_at ASC) FROM products",
+      "expected": "SELECT AVG(price) OVER (PARTITION BY category ORDER BY created_at ASC) FROM products"
+    },
+    {
+      "sql": "SELECT first_name, last_name, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC, hire_date ASC) AS dept_rank FROM employees",
+      "expected": "SELECT first_name, last_name, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC, hire_date ASC) AS dept_rank FROM employees"
     }
   ]
 }

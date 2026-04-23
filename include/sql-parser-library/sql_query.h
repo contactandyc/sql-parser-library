@@ -18,7 +18,7 @@ typedef enum {
     JOIN_FULL
 } sql_join_type_t;
 
-struct sql_select_s; // Forward declaration for recursive pointers
+struct sql_select_s;
 
 typedef struct sql_cte_s {
     char *alias;
@@ -34,12 +34,6 @@ typedef struct sql_join_s {
     sql_ast_node_t *on_condition;
     struct sql_join_s *next;
 } sql_join_t;
-
-typedef struct sql_order_by_s {
-    sql_ast_node_t *expr;
-    bool is_desc;
-    struct sql_order_by_s *next;
-} sql_order_by_t;
 
 // The full top-level query structure
 typedef struct sql_select_s {
@@ -70,8 +64,6 @@ sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t t
 void sql_print_query(sql_select_t *query, int depth);
 
 char *sql_query_to_string(sql_ctx_t *context, sql_select_t *query);
-
-// --- NEW: Export the AST string formatter ---
 char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node);
 
 #endif /* _sql_query_H */

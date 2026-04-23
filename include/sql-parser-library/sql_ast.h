@@ -11,17 +11,34 @@
 #include "sql-parser-library/sql_node.h"
 #include "sql-parser-library/sql_tokenizer.h"
 
+struct sql_ast_node_s;
+
+// --- MOVED: Order By structure is now part of the AST layer ---
+typedef struct sql_order_by_s {
+    struct sql_ast_node_s *expr;
+    bool is_desc;
+    struct sql_order_by_s *next;
+} sql_order_by_t;
+
+// --- NEW: Window Clause Structure ---
+typedef struct sql_window_s {
+    struct sql_ast_node_s *partition_by; // Linked list of partition expressions
+    sql_order_by_t *order_by;            // Order by rules for the window
+} sql_window_t;
+
 typedef struct sql_ast_node_s {
     sql_token_type_t type;
     char *value;
     char *alias;
     sql_data_type_t data_type;
-    sql_ctx_spec_t *spec;     // Top level function specification (if applicable)
+    sql_ctx_spec_t *spec;
     sql_ctx_column_t *column;
 
-    struct sql_ast_node_s *left;   // Left child (for binary operators)
-    struct sql_ast_node_s *right;  // Right child (for binary operators)
-    struct sql_ast_node_s *next;   // Next sibling (if needed)
+    sql_window_t *window_clause; // --- NEW: Attach window definitions to functions ---
+
+    struct sql_ast_node_s *left;
+    struct sql_ast_node_s *right;
+    struct sql_ast_node_s *next;
 } sql_ast_node_t;
 
 sql_ast_node_t *build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token_count);

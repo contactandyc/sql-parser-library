@@ -555,7 +555,32 @@ char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
                 return aml_pool_strdupf(ctx->pool, "CAST(%s AS %s)", expr, type_str);
             }
             char *args = ast_list_to_string(ctx, node->left);
-            return aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
+            char *res = aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
+
+            // --- NEW: Seralize the Window Clause into EXPLAIN output! ---
+            if (node->window_clause) {
+                res = aml_pool_strdupf(ctx->pool, "%s OVER (", res);
+                bool has_part = false;
+                if (node->window_clause->partition_by) {
+                    char *part_str = ast_list_to_string(ctx, node->window_clause->partition_by);
+                    res = aml_pool_strdupf(ctx->pool, "%sPARTITION BY %s", res, part_str);
+                    has_part = true;
+                }
+                if (node->window_clause->order_by) {
+                    if (has_part) res = aml_pool_strdupf(ctx->pool, "%s ", res);
+                    res = aml_pool_strdupf(ctx->pool, "%sORDER BY ", res);
+                    sql_order_by_t *ob = node->window_clause->order_by;
+                    while (ob) {
+                        char *expr_str = sql_ast_to_string(ctx, ob->expr);
+                        res = aml_pool_strdupf(ctx->pool, "%s%s %s", res, expr_str, ob->is_desc ? "DESC" : "ASC");
+                        ob = ob->next;
+                        if (ob) res = aml_pool_strdupf(ctx->pool, "%s, ", res);
+                    }
+                }
+                res = aml_pool_strdupf(ctx->pool, "%s)", res);
+            }
+
+            return res;
         }
         case SQL_LIST: {
             char *args = ast_list_to_string(ctx, node->left);

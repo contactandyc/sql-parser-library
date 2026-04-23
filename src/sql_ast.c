@@ -26,13 +26,10 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
 
     switch (token->type) {
         case SQL_IDENTIFIER: {
-            // Check for booleans first
             if (!strcasecmp(token->token, "TRUE") || !strcasecmp(token->token, "FALSE")) {
                 node->type = SQL_LITERAL;
                 node->data_type = SQL_TYPE_BOOL;
             } else {
-                // It's a raw identifier. We do NOT know what data type it is yet,
-                // and we do NOT link the column. The Binder will do this later.
                 node->data_type = SQL_TYPE_UNKNOWN;
                 node->column = NULL;
             }
@@ -85,12 +82,10 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
     return node;
 }
 
-/* Forward declarations */
 sql_ast_node_t *parse_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_and_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-
 sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
@@ -101,14 +96,8 @@ sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t 
 sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-
 sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
-
-
-/* ------------------------------------------------------------------
- * Hierarchy Engine
- * ------------------------------------------------------------------ */
 
 sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_bitwise_and(context, tokens, pos, end_pos);
@@ -197,7 +186,6 @@ sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **to
         if (is_context_error(context)) return NULL;
         left = operator_node;
     }
-
     return left;
 }
 
@@ -216,7 +204,6 @@ sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos
         if (is_context_error(context)) return NULL;
         left = operator_node;
     }
-
     return left;
 }
 
@@ -271,10 +258,6 @@ sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, si
     }
     return left;
 }
-
-/* ------------------------------------------------------------------
- * Primary, function calls, etc.
- * ------------------------------------------------------------------ */
 
 size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos,
                          size_t end_pos, sql_token_type_t closing_token_type) {
@@ -553,6 +536,76 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
         }
 
         func_node->left = arg_list_head;
+
+        // --- NEW: PARSE WINDOW CLAUSES ---
+        if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "OVER") == 0) {
+            (*pos)++; // Consume OVER
+            if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
+                (*pos)++; // Consume '('
+
+                sql_window_t *window = aml_pool_zalloc(context->pool, sizeof(sql_window_t));
+
+                if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "PARTITION") == 0) {
+                    (*pos)++;
+                    if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "BY") == 0) {
+                        (*pos)++;
+                        sql_ast_node_t *part_head = NULL, *part_tail = NULL;
+                        while (*pos < end_pos && tokens[*pos]->type != SQL_KEYWORD && tokens[*pos]->type != SQL_CLOSE_PAREN) {
+                            sql_ast_node_t *expr = parse_expression(context, tokens, pos, end_pos);
+                            if (!expr) break;
+                            if (!part_head) part_head = part_tail = expr;
+                            else { part_tail->next = expr; part_tail = expr; }
+                            if (*pos < end_pos && tokens[*pos]->type == SQL_COMMA) (*pos)++;
+                            else break;
+                        }
+                        window->partition_by = part_head;
+                    } else {
+                        sql_ctx_error(context, "Expected BY after PARTITION");
+                    }
+                }
+
+                if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "ORDER") == 0) {
+                    (*pos)++;
+                    if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "BY") == 0) {
+                        (*pos)++;
+                        sql_order_by_t *ob_head = NULL, *ob_tail = NULL;
+                        while (*pos < end_pos && tokens[*pos]->type != SQL_CLOSE_PAREN) {
+                            sql_order_by_t *ob_node = aml_pool_zalloc(context->pool, sizeof(sql_order_by_t));
+                            ob_node->expr = parse_expression(context, tokens, pos, end_pos);
+                            ob_node->is_desc = false;
+
+                            if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD) {
+                                if (strcasecmp(tokens[*pos]->token, "DESC") == 0) {
+                                    ob_node->is_desc = true;
+                                    (*pos)++;
+                                } else if (strcasecmp(tokens[*pos]->token, "ASC") == 0) {
+                                    (*pos)++;
+                                }
+                            }
+                            if (!ob_head) ob_head = ob_tail = ob_node;
+                            else { ob_tail->next = ob_node; ob_tail = ob_node; }
+
+                            if (*pos < end_pos && tokens[*pos]->type == SQL_COMMA) (*pos)++;
+                            else break;
+                        }
+                        window->order_by = ob_head;
+                    } else {
+                        sql_ctx_error(context, "Expected BY after ORDER");
+                    }
+                }
+
+                if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                    (*pos)++; // Consume ')'
+                } else {
+                    sql_ctx_error(context, "Expected closing parenthesis for OVER clause");
+                }
+
+                func_node->window_clause = window;
+            } else {
+                sql_ctx_error(context, "Expected '(' after OVER");
+            }
+        }
+
     } else {
         func_node->type = SQL_FUNCTION_LITERAL;
         func_node->data_type = SQL_TYPE_STRING;
@@ -560,10 +613,6 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 
     return func_node;
 }
-
-/* ------------------------------------------------------------------
- * Comparison & special operators (BETWEEN, IN, etc.)
- * ------------------------------------------------------------------ */
 
 static sql_ast_node_t *parse_between(sql_ctx_t *context, sql_ast_node_t *left,
                                      sql_token_t **tokens, size_t *pos, size_t end_pos) {
@@ -1020,6 +1069,25 @@ void print_ast(sql_ast_node_t *node, int depth) {
         printf("[%s] %s (DataType: %s) %p\n", type_name, node->value, data_type_name, node->spec);
     } else {
         printf("[%s] (DataType: %s) %p\n", type_name, data_type_name, node->spec);
+    }
+
+    if (node->window_clause) {
+        for (int i = 0; i < depth + 1; i++) printf("  ");
+        printf("WINDOW:\n");
+        if (node->window_clause->partition_by) {
+            for (int i = 0; i < depth + 2; i++) printf("  ");
+            printf("PARTITION BY:\n");
+            print_ast(node->window_clause->partition_by, depth + 3);
+        }
+        if (node->window_clause->order_by) {
+            for (int i = 0; i < depth + 2; i++) printf("  ");
+            printf("ORDER BY:\n");
+            sql_order_by_t *ob = node->window_clause->order_by;
+            while(ob) {
+                print_ast(ob->expr, depth + 3);
+                ob = ob->next;
+            }
+        }
     }
 
     if (node->type == SQL_COMPARISON &&

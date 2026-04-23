@@ -95,7 +95,8 @@ bool sql_ctx_is_reserved_keyword(sql_ctx_t *ctx, const char *keyword) {
 
 void sql_reserve_default_keywords(sql_ctx_t *ctx) {
     static const char *sql_keywords[] = {
-        "EXPLAIN", "WITH", // --- ADDED WITH ---
+        "EXPLAIN", "WITH",
+        "OVER", "PARTITION", "WINDOW", // --- NEW: WINDOW FUNCTION KEYWORDS ---
         "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
         "JOIN", "ON", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
         "GROUP", "HAVING", "LIMIT", "OFFSET",
@@ -116,7 +117,6 @@ void sql_ctx_error(sql_ctx_t *ctx, const char *format, ...) {
     message->message = aml_pool_strdupvf(ctx->pool, format, args);
     va_end(args);
 
-    // Append to the errors list
     message->next = ctx->errors;
     ctx->errors = message;
 }
@@ -130,7 +130,6 @@ void sql_ctx_warning(sql_ctx_t *ctx, const char *format, ...) {
     message->message = aml_pool_strdupvf(ctx->pool, format, args);
     va_end(args);
 
-    // Append to the warnings list
     message->next = ctx->warnings;
     ctx->warnings = message;
 }
