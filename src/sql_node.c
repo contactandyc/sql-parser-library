@@ -30,11 +30,11 @@ const char *sql_token_type_name(sql_token_type_t type) {
         case SQL_COMMENT: return "COMMENT";
         case SQL_IDENTIFIER: return "IDENTIFIER";
         case SQL_COMPOUND_LITERAL: return "COMPOUND_LITERAL";
-        case SQL_LITERAL: return "LITERAL";
+        case SQL_STAR: return "STAR";
         case SQL_NULL: return "NULL";
         case SQL_TOKEN: return "TOKEN";
-        case SQL_STAR: return "STAR";
         case SQL_LIST: return "LIST";
+        case SQL_NODE_SUBQUERY: return "SUBQUERY"; // --- NEW ---
         default: return "UNKNOWN";
     }
 }

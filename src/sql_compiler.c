@@ -6,11 +6,67 @@
 
 #include "sql-parser-library/sql_compiler.h"
 #include "sql-parser-library/sql_ast.h"
+#include "sql-parser-library/sql_vm.h"
 #include <string.h>
+
+static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
+    if (!node) return;
+
+    for (size_t i = 0; i < node->num_parameters; i++) {
+        evaluate_subqueries(ctx, node->parameters[i]);
+    }
+
+    if (node->type == SQL_NODE_SUBQUERY && node->subquery_ast) {
+        if (ctx->vm) {
+            // Prevent physical execution during outer EXPLAIN runs unless requested
+            if (node->subquery_ast->is_explain) return;
+
+            // Fire up the inner VM!
+            sql_result_set_t *rs = sql_vm_execute(ctx->vm, node->subquery_ast);
+
+            bool is_list = (node->token && strcmp(node->token, "LIST_SUBQUERY") == 0);
+
+            if (!is_list && rs && rs->count == 1 && rs->num_columns == 1) {
+                // --- SCALAR SUBQUERY ---
+                sql_node_t *literal = copy_nodes(ctx, rs->rows[0].columns[0]);
+                if (literal) {
+                    *node = *literal;
+                } else {
+                    node->is_null = true;
+                }
+            } else if (rs && rs->num_columns == 1) {
+                // --- LIST SUBQUERY (for IN clauses) ---
+                node->type = SQL_LIST;
+                node->token_type = SQL_LIST;
+                node->num_parameters = rs->count;
+
+                if (rs->count > 0) {
+                    node->parameters = aml_pool_alloc(ctx->pool, rs->count * sizeof(sql_node_t *));
+                    for (size_t i = 0; i < rs->count; i++) {
+                        node->parameters[i] = copy_nodes(ctx, rs->rows[i].columns[0]);
+                    }
+                    node->data_type = node->parameters[0]->data_type;
+                } else {
+                    node->parameters = NULL;
+                    node->data_type = SQL_TYPE_UNKNOWN;
+                }
+            } else {
+                // Fallback: Empty or multi-column result
+                node->is_null = true;
+                node->type = SQL_NULL;
+                node->token_type = SQL_NULL;
+                node->data_type = SQL_TYPE_UNKNOWN;
+            }
+        }
+    }
+}
 
 sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
     if (!ast) return NULL;
     sql_node_t *node = convert_ast_to_node(ctx, ast);
+
+    evaluate_subqueries(ctx, node);
+
     apply_type_conversions(ctx, node);
     simplify_func_tree(ctx, node);
     simplify_logical_expressions(node);

@@ -7,6 +7,7 @@
 #include "sql-parser-library/sql_ast.h"
 #include "sql-parser-library/date_utils.h"
 #include "a-memory-library/aml_pool.h"
+#include "sql-parser-library/sql_query.h"
 #include <strings.h>
 #include <string.h>
 #include <ctype.h>
@@ -76,7 +77,6 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
             break;
         case SQL_STAR:
         case SQL_OPERATOR:
-            // Safely type Stars/Operators to unknown so they can pass cleanly into COUNT(*)
             node->data_type = SQL_TYPE_UNKNOWN;
             break;
         default:
@@ -317,7 +317,6 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
 
     sql_token_t *token = tokens[*pos];
 
-    // 1. CASE WHEN ... END Block
     if (strcasecmp(token->token, "CASE") == 0) {
         (*pos)++;
         sql_ast_node_t *case_node = create_ast_node(context, token);
@@ -363,10 +362,8 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
         return case_node;
     }
 
-    // 2. INTERVAL Fusion Block
-    // Case A: The Tokenizer split INTERVAL, '30', and DAY
     if (strcasecmp(token->token, "INTERVAL") == 0) {
-        (*pos)++; // Consume INTERVAL
+        (*pos)++;
         if (*pos + 1 < end_pos) {
             sql_token_t *val_token = tokens[(*pos)++];
             sql_token_t *unit_token = tokens[(*pos)++];
@@ -382,17 +379,13 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
             return NULL;
         }
     }
-    // Case B: The Tokenizer pre-fused the string (SQL_COMPOUND_LITERAL: "INTERVAL '30'") leaving DAY behind
     else if (token->type == SQL_COMPOUND_LITERAL && strncasecmp(token->token, "INTERVAL", 8) == 0) {
-        (*pos)++; // Consume the compound literal
+        (*pos)++;
 
-        // FIX: Allow the unit token to be a SQL_FUNCTION (like DAY or MONTH)
         if (*pos < end_pos && (tokens[*pos]->type == SQL_IDENTIFIER ||
                                tokens[*pos]->type == SQL_KEYWORD ||
                                tokens[*pos]->type == SQL_FUNCTION)) {
             sql_token_t *unit_token = tokens[(*pos)++];
-
-            // Fuse the unit with the existing compound string
             char *combined = aml_pool_strdupf(context->pool, "%s %s", token->token, unit_token->token);
             sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
             node->type = SQL_COMPOUND_LITERAL;
@@ -400,14 +393,29 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
             node->data_type = SQL_TYPE_STRING;
             return node;
         } else {
-            // If there's no unit, safely return the compound literal as-is
             return create_ast_node(context, token);
         }
     }
 
-    // 3. Parentheses Block
     if (token->type == SQL_OPEN_PAREN) {
         (*pos)++;
+
+        if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "SELECT") == 0) {
+            sql_select_t *subquery = sql_parse_select_query(context, tokens, pos, end_pos);
+
+            if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                (*pos)++;
+            } else {
+                sql_ctx_error(context, "Expected closing parenthesis after expression subquery");
+            }
+
+            sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
+            node->type = SQL_NODE_SUBQUERY;
+            node->data_type = SQL_TYPE_UNKNOWN;
+            node->subquery = subquery;
+            return node;
+        }
+
         sql_ast_node_t *node = parse_expression(context, tokens, pos, end_pos);
         if (is_context_error(context)) return NULL;
         if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
@@ -418,14 +426,11 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
         return node;
     }
 
-    // 4. Function Calls
     if (token->type == SQL_FUNCTION) {
         (*pos)++;
         return parse_function_call(context, tokens, pos, end_pos);
     }
 
-    // 5. Identifiers, Literals, Stars, and :: CAST
-    // FIX: Check for the "*" string natively, bypassing strict type categories!
     if (token->type == SQL_IDENTIFIER ||
         token->type == SQL_COMPOUND_LITERAL ||
         token->type == SQL_LITERAL ||
@@ -509,14 +514,13 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             sql_ast_node_t *expr_node = parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "AS") == 0) {
-                sql_ast_node_t *as_node = create_ast_node(context, tokens[(*pos)++]); // Consume AS
+                sql_ast_node_t *as_node = create_ast_node(context, tokens[(*pos)++]);
 
                 if (*pos < end_pos) {
-                    sql_ast_node_t *type_node = create_ast_node(context, tokens[(*pos)++]); // Consume type
+                    sql_ast_node_t *type_node = create_ast_node(context, tokens[(*pos)++]);
 
                     if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-                        (*pos)++; // Consume ')'
-
+                        (*pos)++;
                         expr_node->next = as_node;
                         as_node->next = type_node;
                         func_node->left = expr_node;
@@ -591,11 +595,10 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
 
         func_node->left = arg_list_head;
 
-        // --- PARSE WINDOW CLAUSES ---
         if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "OVER") == 0) {
-            (*pos)++; // Consume OVER
+            (*pos)++;
             if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
-                (*pos)++; // Consume '('
+                (*pos)++;
 
                 sql_window_t *window = aml_pool_zalloc(context->pool, sizeof(sql_window_t));
 
@@ -649,7 +652,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
                 }
 
                 if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
-                    (*pos)++; // Consume ')'
+                    (*pos)++;
                 } else {
                     sql_ctx_error(context, "Expected closing parenthesis for OVER clause");
                 }
@@ -1045,6 +1048,32 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context,
                               size_t *pos,
                               size_t token_count)
 {
+    // --- FIX: IN (SELECT ...) Subquery Support ---
+    if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
+        if (*pos + 1 < token_count && tokens[*pos + 1]->type == SQL_KEYWORD && strcasecmp(tokens[*pos + 1]->token, "SELECT") == 0) {
+            (*pos)++;
+            sql_select_t *subquery = sql_parse_select_query(context, tokens, pos, token_count);
+
+            if (*pos < token_count && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                (*pos)++;
+            } else {
+                sql_ctx_error(context, "Expected closing parenthesis after IN (SELECT) subquery");
+                return NULL;
+            }
+
+            sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
+            node->type = SQL_NODE_SUBQUERY;
+            node->data_type = SQL_TYPE_UNKNOWN;
+
+            // TAG IT SO THE COMPILER KNOWS HOW TO EVALUATE IT!
+            node->value = "LIST_SUBQUERY";
+
+            node->subquery = subquery;
+
+            return node; // DIRECT RETURN! NO LIST WRAPPER!
+        }
+    }
+
     sql_ast_node_t *list_node = (sql_ast_node_t *)aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
     list_node->type = SQL_LIST;
     list_node->value = NULL;
@@ -1123,7 +1152,10 @@ void print_ast(sql_ast_node_t *node, int depth) {
     const char *type_name = sql_token_type_name(node->type);
     const char *data_type_name = sql_data_type_name(node->data_type);
 
-    if (node->value) {
+    if (node->type == SQL_NODE_SUBQUERY) {
+        printf("[SUBQUERY]\n");
+        sql_print_query(node->subquery, depth + 1);
+    } else if (node->value) {
         printf("[%s] %s (DataType: %s) %p\n", type_name, node->value, data_type_name, node->spec);
     } else {
         printf("[%s] (DataType: %s) %p\n", type_name, data_type_name, node->spec);

@@ -135,14 +135,18 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     sql_node_t *node = (sql_node_t *)aml_pool_zalloc(pool, sizeof(sql_node_t));
 
     node->token_type = ast->type;
-    node->token = (ast->type == SQL_LIST) ? NULL : aml_pool_strdup(pool, ast->value);
+    node->token = (ast->type == SQL_LIST || ast->type == SQL_NODE_SUBQUERY) ? NULL : aml_pool_strdup(pool, ast->value);
     node->type = ast->type;
     node->column = ast->column;
     node->data_type = ast->data_type;
     node->spec = ast->spec;
 
-    if (ast->type != SQL_LIST)
+    if (ast->type == SQL_NODE_SUBQUERY) {
+        node->token = aml_pool_strdup(pool, ast->value ? ast->value : "SUBQUERY");
+        node->subquery_ast = ast->subquery;
+    } else if (ast->type != SQL_LIST) {
         convert_value(pool, ast, node);
+    }
 
     if (ast->type == SQL_LIST) {
         node->data_type = infer_list_type(ast);
@@ -184,13 +188,9 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
         node->parameters[0] = convert_ast_to_node(context, ast->left);
         node->data_type = SQL_TYPE_BOOL;
     } else if(ast->type == SQL_IDENTIFIER) {
-        // --- NEW DYNAMIC FALLBACK LOGIC ---
         if (ast->column) {
-            // SUCCESS! The Binder already resolved this. Just grab the function pointer.
             node->func = ast->column->func;
         } else if (context->schema_lookup) {
-            // Fallback: If the user bypassed the Binder and just ran a raw expression,
-            // query the dynamic catalog for the identifier (passing NULL for table name).
             sql_ctx_column_t *col = context->schema_lookup(context, NULL, ast->value);
             if (col) {
                 node->data_type = col->type;

@@ -35,30 +35,25 @@ typedef struct sql_join_s {
     struct sql_join_s *next;
 } sql_join_t;
 
-// The full top-level query structure
 typedef struct sql_select_s {
     bool is_explain;
-
     sql_cte_t *ctes;
-
     bool is_star;
     sql_ast_node_t *columns;
-
     char *table;
     struct sql_select_s *subquery;
     char *table_alias;
     sql_join_t *joins;
-
     sql_ast_node_t *where_clause;
-
     sql_ast_node_t *group_by;
     sql_ast_node_t *having_clause;
-
     sql_order_by_t *order_by;
-
     sql_ast_node_t *limit;
     sql_ast_node_t *offset;
 } sql_select_t;
+
+// --- EXPOSED: So the AST builder can parse inner subqueries! ---
+sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
 
 sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t token_count);
 void sql_print_query(sql_select_t *query, int depth);

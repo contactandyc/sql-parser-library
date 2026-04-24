@@ -12,18 +12,17 @@
 #include "sql-parser-library/sql_tokenizer.h"
 
 struct sql_ast_node_s;
+struct sql_select_s; // Forward declaration
 
-// --- MOVED: Order By structure is now part of the AST layer ---
 typedef struct sql_order_by_s {
     struct sql_ast_node_s *expr;
     bool is_desc;
     struct sql_order_by_s *next;
 } sql_order_by_t;
 
-// --- NEW: Window Clause Structure ---
 typedef struct sql_window_s {
-    struct sql_ast_node_s *partition_by; // Linked list of partition expressions
-    sql_order_by_t *order_by;            // Order by rules for the window
+    struct sql_ast_node_s *partition_by;
+    sql_order_by_t *order_by;
 } sql_window_t;
 
 typedef struct sql_ast_node_s {
@@ -34,7 +33,10 @@ typedef struct sql_ast_node_s {
     sql_ctx_spec_t *spec;
     sql_ctx_column_t *column;
 
-    sql_window_t *window_clause; // --- NEW: Attach window definitions to functions ---
+    sql_window_t *window_clause;
+
+    // --- NEW: Expression Subqueries ---
+    struct sql_select_s *subquery;
 
     struct sql_ast_node_s *left;
     struct sql_ast_node_s *right;

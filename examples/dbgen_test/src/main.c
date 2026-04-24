@@ -390,7 +390,9 @@ sql_dataset_t *my_fetch_table(sql_vm_t *vm, const char *table) {
 
 // --- 8. EXECUTION ---
 int main(int argc, char **argv) {
-    const char *queries[] = {
+    /*
+    // DO NOT DELETE, commented out temporarily!
+    const char *queries2[] = {
         // Test 1: Simple Scan & Filter
         "SELECT name, comment "
         "FROM region "
@@ -543,6 +545,29 @@ int main(int argc, char **argv) {
         "FROM lineitem l "
         "GROUP BY ship_year "
         "ORDER BY items DESC "
+        "LIMIT 5"
+    };
+    */
+
+    const char *queries[] = {
+        // Test 19: Subquery
+        "SELECT regionkey FROM region WHERE name = 'ASIA' OR name = 'EUROPE'",
+
+        // Test 20: Uncorrelated Subquery (IN List / Optimizer Demo)
+        "SELECT n.name AS Nation, r.name AS Region "
+        "FROM nation n "
+        "JOIN region r ON n.regionkey = r.regionkey "
+        "WHERE n.regionkey IN (SELECT regionkey FROM region WHERE name = 'ASIA' OR name = 'EUROPE') "
+        "ORDER BY Nation ASC",
+
+        // Test 21: Uncorrelated Scalar Subquery (Streams lineitem twice!)
+        "SELECT n.name AS Nation, SUM(l.extendedprice) AS Revenue "
+        "FROM nation n "
+        "JOIN supplier s ON n.nationkey = s.nationkey "
+        "JOIN lineitem l ON s.suppkey = l.suppkey "
+        "WHERE l.extendedprice > (SELECT AVG(extendedprice) FROM lineitem) "
+        "GROUP BY n.name "
+        "ORDER BY Revenue DESC "
         "LIMIT 5"
     };
 

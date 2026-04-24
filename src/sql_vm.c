@@ -150,7 +150,11 @@ sql_vm_t *sql_vm_init(sql_ctx_t *ctx, sql_vm_fetch_table_cb fetch_cb, sql_vm_res
     vm->fetch_table = fetch_cb;
     vm->resolve_column = resolve_cb;
     vm->user_data = user_data;
+
+    // --- NEW: Attach to Context! ---
     ctx->schema_lookup = vm_catalog_router;
+    ctx->vm = vm;
+
     return vm;
 }
 

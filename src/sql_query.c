@@ -13,7 +13,8 @@ static inline bool is_context_error(sql_ctx_t *context) {
     return context->errors != NULL;
 }
 
-static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
+// Ensure the prototype is available internally
+sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
 
 static sql_ast_node_t *parse_projection_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *head = NULL;
@@ -119,7 +120,7 @@ static sql_join_t *parse_join_list(sql_ctx_t *context, sql_token_t **tokens, siz
 
         if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
             (*pos)++; // Consume '('
-            node->subquery = parse_select_query(context, tokens, pos, end_pos);
+            node->subquery = sql_parse_select_query(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
                 (*pos)++; // Consume ')'
@@ -197,7 +198,7 @@ static sql_order_by_t *parse_order_by_list(sql_ctx_t *context, sql_token_t **tok
     return head;
 }
 
-static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count) {
+sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count) {
     if (*pos >= token_count) return NULL;
 
     sql_select_t *query = aml_pool_zalloc(context->pool, sizeof(sql_select_t));
@@ -231,7 +232,7 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
 
             if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
                 (*pos)++;
-                cte->query = parse_select_query(context, tokens, pos, token_count);
+                cte->query = sql_parse_select_query(context, tokens, pos, token_count);
 
                 if (*pos < token_count && tokens[*pos]->type == SQL_CLOSE_PAREN) {
                     (*pos)++;
@@ -275,7 +276,7 @@ static sql_select_t *parse_select_query(sql_ctx_t *context, sql_token_t **tokens
 
         if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
             (*pos)++;
-            query->subquery = parse_select_query(context, tokens, pos, token_count);
+            query->subquery = sql_parse_select_query(context, tokens, pos, token_count);
 
             if (*pos < token_count && tokens[*pos]->type == SQL_CLOSE_PAREN) {
                 (*pos)++;
@@ -356,7 +357,7 @@ sql_select_t *sql_parse_query(sql_ctx_t *context, sql_token_t **tokens, size_t t
     if (token_count == 0) return NULL;
     size_t pos = 0;
 
-    sql_select_t *query = parse_select_query(context, tokens, &pos, token_count);
+    sql_select_t *query = sql_parse_select_query(context, tokens, &pos, token_count);
 
     if (is_context_error(context)) return NULL;
 
@@ -465,7 +466,6 @@ static char *ast_list_to_string(sql_ctx_t *ctx, sql_ast_node_t *head) {
     return result;
 }
 
-// --- RENAMED TO BE PUBLIC: sql_ast_to_string ---
 char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
     if (!node) return aml_pool_strdup(ctx->pool, "");
 
@@ -520,7 +520,7 @@ char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             if (node->left) {
                 return aml_pool_strdupf(ctx->pool, "%s%s", node->value, sql_ast_to_string(ctx, node->left));
             }
-            break;
+            return aml_pool_strdup(ctx->pool, node->value);
         }
         case SQL_FUNCTION: {
             if (strcasecmp(node->value, "CASE") == 0) {
@@ -557,7 +557,6 @@ char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             char *args = ast_list_to_string(ctx, node->left);
             char *res = aml_pool_strdupf(ctx->pool, "%s(%s)", node->value, args);
 
-            // --- NEW: Seralize the Window Clause into EXPLAIN output! ---
             if (node->window_clause) {
                 res = aml_pool_strdupf(ctx->pool, "%s OVER (", res);
                 bool has_part = false;
@@ -585,6 +584,12 @@ char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
         case SQL_LIST: {
             char *args = ast_list_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "(%s)", args);
+        }
+
+        // --- NEW: Convert Subquery AST to String ---
+        case SQL_NODE_SUBQUERY: {
+            char *sub_str = sql_query_to_string(ctx, node->subquery);
+            return aml_pool_strdupf(ctx->pool, "(%s)", sub_str);
         }
         default: break;
     }

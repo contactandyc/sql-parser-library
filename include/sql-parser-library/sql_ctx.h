@@ -59,6 +59,8 @@ struct sql_ctx_s {
     sql_schema_lookup_cb schema_lookup;
     void *catalog_state;
 
+    struct sql_vm_s *vm; // --- NEW: Grants the compiler access to the VM ---
+
     int time_zone_offset;
 
     sql_ctx_message_t *errors;
@@ -69,7 +71,6 @@ struct sql_ctx_s {
 
     void *row;
 
-    // --- NEW: The active aggregate states for the current group! ---
     void **current_agg_states;
 };
 
@@ -97,7 +98,6 @@ struct sql_ctx_spec_s {
     const char *description;
     sql_ctx_update_cb update;
 
-    // --- NEW: AGGREGATE LIFECYCLE ---
     bool is_aggregate;
     size_t state_size;
     void (*agg_init)(void *state);
@@ -138,7 +138,6 @@ void sql_register_regex(sql_ctx_t *ctx);
 void sql_register_json(sql_ctx_t *ctx);
 bool is_valid_extract(const char *value);
 
-// Group Functions
 void sql_register_avg(sql_ctx_t *ctx);
 void sql_register_count(sql_ctx_t *ctx);
 void sql_register_sum(sql_ctx_t *ctx);
@@ -177,13 +176,9 @@ void register_ctx(sql_ctx_t *ctx) {
     sql_register_case(ctx);
     sql_register_regex(ctx);
     sql_register_json(ctx);
-
-    // Group Functions
     sql_register_avg(ctx);
     sql_register_count(ctx);
     sql_register_sum(ctx);
-
-    // Window functions
     sql_register_row_number(ctx);
     sql_register_rank(ctx);
 }

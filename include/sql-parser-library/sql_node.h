@@ -35,6 +35,9 @@ typedef enum {
     SQL_STAR = 222,       // For '*'
     SQL_NULL = 223,       // For NULL
     SQL_LIST = 300,       // For list of expressions
+
+    // --- NEW: Expression Subquery Token ---
+    SQL_NODE_SUBQUERY = 400
 } sql_token_type_t;
 
 const char *sql_token_type_name(sql_token_type_t type);
@@ -61,6 +64,10 @@ struct sql_ctx_spec_s;
 struct sql_ctx_column_s;
 typedef struct sql_ctx_column_s sql_ctx_column_t;
 
+// Forward declarations for subquery integration
+struct sql_select_s;
+struct sql_compiled_query_s;
+
 // callback function to resolve a row
 typedef sql_node_t * (*sql_node_cb)(struct sql_ctx_s *ctx, sql_node_t *f);
 
@@ -85,6 +92,10 @@ struct sql_node_s {
     int agg_index;
     sql_node_t **parameters;
     size_t num_parameters;
+
+    // --- NEW: Subquery Linkage ---
+    struct sql_select_s *subquery_ast;
+    struct sql_compiled_query_s *compiled_subquery;
 };
 
 #endif
