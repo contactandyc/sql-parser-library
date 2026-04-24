@@ -204,21 +204,21 @@ static void evaluate_expression(sql_ctx_t *ctx, my_table_t *table, const char *e
         return;
     }
 
-    sql_ast_node_t *ast = build_ast(ctx, tokens, token_count);
+    sql_ast_node_t *ast = sql_build_ast(ctx, tokens, token_count);
     if (!ast) {
         printf("AST build failed.\n");
         return;
     }
 
-    sql_node_t *expr_node = convert_ast_to_node(ctx, ast);
+    sql_node_t *expr_node = sql_convert_ast_to_node(ctx, ast);
     if (!expr_node) {
         printf("Failed to convert AST to execution node.\n");
         return;
     }
 
     apply_type_conversions(ctx, expr_node);
-    simplify_func_tree(ctx, expr_node);
-    simplify_logical_expressions(expr_node);
+    sql_simplify_func_tree(ctx, expr_node);
+    sql_simplify_logical_expressions(expr_node);
 
     printf("=== Results for Expression: '%s' ===\n", expr_str);
     for (size_t r = 0; r < table->num_rows; r++) {

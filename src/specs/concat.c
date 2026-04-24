@@ -66,14 +66,14 @@ static sql_ctx_spec_update_t *update_concat_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
     return update;
 }
 
-sql_ctx_spec_t concat_op_spec = {
+static sql_ctx_spec_t concat_op_spec = {
     .name = "||",
     .description = "String concatenation operator",
     .update = update_concat_spec
 };
 
 // CONCAT function spec
-sql_ctx_spec_t concat_function_spec = {
+static sql_ctx_spec_t concat_function_spec = {
     .name = "CONCAT",
     .description = "Concatenates multiple string values into a single string.",
     .update = update_concat_spec

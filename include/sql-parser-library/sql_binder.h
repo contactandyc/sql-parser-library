@@ -12,13 +12,22 @@
 #include "sql-parser-library/sql_ctx.h"
 #include <stdbool.h>
 
-// ANSI Strict Mode: Column aliases are NOT allowed in the WHERE clause
+/**
+ * The Binder traverses the parsed AST and attempts to link raw string identifiers
+ * (like "users.id") to physical schema columns using the context's catalog callbacks.
+ */
+
+/** * Binds the query using ANSI Strict Mode.
+ * (Column aliases defined in SELECT are NOT allowed in the WHERE clause).
+ */
 bool sql_bind_query_strict(sql_ctx_t *ctx, sql_select_t *query);
 
-// Custom Engine Mode: Column aliases ARE allowed in the WHERE clause
+/** * Binds the query using Custom Engine Mode.
+ * (Column aliases defined in SELECT ARE allowed in the WHERE clause).
+ */
 bool sql_bind_query_extended(sql_ctx_t *ctx, sql_select_t *query);
 
-// Resolves column identifiers for a standalone expression tree
+/** Resolves column identifiers for a standalone expression tree. */
 bool sql_bind_expression(sql_ctx_t *ctx, sql_ast_node_t *expr);
 
 #endif /* _sql_binder_H */

@@ -202,19 +202,19 @@ static sql_ctx_spec_update_t *update_position_spec(sql_ctx_t *ctx, sql_ctx_spec_
 // -----------------------------------------------------------------------------
 // REGISTRATION
 // -----------------------------------------------------------------------------
-sql_ctx_spec_t replace_spec = {
+static sql_ctx_spec_t replace_spec = {
     .name = "REPLACE",
     .description = "Replaces all occurrences of a substring within a string.",
     .update = update_replace_spec
 };
 
-sql_ctx_spec_t split_part_spec = {
+static sql_ctx_spec_t split_part_spec = {
     .name = "SPLIT_PART",
     .description = "Splits a string on a delimiter and returns the Nth part (1-indexed).",
     .update = update_split_part_spec
 };
 
-sql_ctx_spec_t position_spec = {
+static sql_ctx_spec_t position_spec = {
     .name = "POSITION",
     .description = "Returns the position of the first occurrence of a substring in a string.",
     .update = update_position_spec

@@ -101,19 +101,19 @@ static sql_ctx_spec_update_t *update_trim_spec(sql_ctx_t *ctx, sql_ctx_spec_t *s
     return update;
 }
 
-sql_ctx_spec_t trim_spec = {
+static sql_ctx_spec_t trim_spec = {
     .name = "TRIM",
     .description = "Removes leading and trailing spaces from a string.",
     .update = update_trim_spec
 };
 
-sql_ctx_spec_t rtrim_spec = {
+static sql_ctx_spec_t rtrim_spec = {
     .name = "RTRIM",
     .description = "Removes trailing spaces from a string.",
     .update = update_trim_spec
 };
 
-sql_ctx_spec_t ltrim_spec = {
+static sql_ctx_spec_t ltrim_spec = {
     .name = "LTRIM",
     .description = "Removes leading spaces from a string.",
     .update = update_trim_spec

@@ -181,13 +181,13 @@ static sql_ctx_spec_update_t *update_bitwise_unary_spec(sql_ctx_t *ctx, sql_ctx_
 // REGISTRATION
 // -----------------------------------------------------------------------------
 
-sql_ctx_spec_t modulo_spec       = { .name = "%",  .description = "Modulo", .update = update_math_ext_spec };
-sql_ctx_spec_t exponent_spec     = { .name = "^",  .description = "Exponent", .update = update_math_ext_spec };
-sql_ctx_spec_t bitwise_and_spec  = { .name = "&",  .description = "Bitwise AND", .update = update_bitwise_binary_spec };
-sql_ctx_spec_t bitwise_or_spec   = { .name = "|",  .description = "Bitwise OR", .update = update_bitwise_binary_spec };
-sql_ctx_spec_t bitwise_shl_spec  = { .name = "<<", .description = "Bitwise Shift Left", .update = update_bitwise_binary_spec };
-sql_ctx_spec_t bitwise_shr_spec  = { .name = ">>", .description = "Bitwise Shift Right", .update = update_bitwise_binary_spec };
-sql_ctx_spec_t bitwise_not_spec  = { .name = "~",  .description = "Bitwise NOT", .update = update_bitwise_unary_spec };
+static sql_ctx_spec_t modulo_spec       = { .name = "%",  .description = "Modulo", .update = update_math_ext_spec };
+static sql_ctx_spec_t exponent_spec     = { .name = "^",  .description = "Exponent", .update = update_math_ext_spec };
+static sql_ctx_spec_t bitwise_and_spec  = { .name = "&",  .description = "Bitwise AND", .update = update_bitwise_binary_spec };
+static sql_ctx_spec_t bitwise_or_spec   = { .name = "|",  .description = "Bitwise OR", .update = update_bitwise_binary_spec };
+static sql_ctx_spec_t bitwise_shl_spec  = { .name = "<<", .description = "Bitwise Shift Left", .update = update_bitwise_binary_spec };
+static sql_ctx_spec_t bitwise_shr_spec  = { .name = ">>", .description = "Bitwise Shift Right", .update = update_bitwise_binary_spec };
+static sql_ctx_spec_t bitwise_not_spec  = { .name = "~",  .description = "Bitwise NOT", .update = update_bitwise_unary_spec };
 
 void sql_register_arithmetic_ext(sql_ctx_t *ctx) {
     sql_ctx_register_spec(ctx, &modulo_spec);

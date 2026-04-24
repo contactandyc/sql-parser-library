@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <strings.h>
 
-sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *start, size_t length,
+static sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *start, size_t length,
                              sql_token_type_t type, const char *alt_token) {
     size_t token_length = length;
     if (alt_token)
@@ -37,7 +37,7 @@ sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *sta
     return token;
 }
 
-void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
+static void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
                       size_t length, const char **s) {
     aml_pool_t *pool = context->pool;
     const char *peek = *s;
@@ -76,7 +76,7 @@ void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
     }
 }
 
-void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
+static void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
                      size_t length, const char **s) {
     aml_pool_t *pool = context->pool;
     while (isspace(**s)) (*s)++; // Skip whitespace
@@ -129,7 +129,7 @@ void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
     }
 }
 
-void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const char **s) {
+static void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const char **s) {
     const char *start = *s;
 
     while (isalnum(**s) || **s == '_' || **s == '.') {
@@ -179,7 +179,7 @@ void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const ch
     }
 }
 
-void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = *s;
     bool seen_dot = false;
     bool seen_e = false;
@@ -237,11 +237,10 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     *s = scan;
 }
 
-void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = *s;
     char ch = **s;
 
-    // CRITICAL FIX: Ensure JSON operator is caught securely
     if (ch == '-' && (*s)[1] == '>' && (*s)[2] == '>') {
         _sql_token_init(bh, pool, start, 3, SQL_OPERATOR, NULL);
         *s += 3;
@@ -271,7 +270,7 @@ void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     }
 }
 
-void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     char ch = **s;
     sql_token_type_t type;
     switch (ch) {
@@ -286,7 +285,7 @@ void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s
     (*s)++;
 }
 
-void handle_string_literal(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_string_literal(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = ++(*s);
     while (**s && (**s != '\'' || *(*s + 1) == '\'')) {
         if (**s == '\'' && *(*s + 1) == '\'') (*s)++;
@@ -296,7 +295,7 @@ void handle_string_literal(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     if (**s == '\'') (*s)++;
 }
 
-void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     char ch = **s;
     const char *start = *s;
 
@@ -322,7 +321,7 @@ void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     }
 }
 
-void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s, sql_token_t *last_token) {
+static void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s, sql_token_t *last_token) {
     if ((**s == '-' || **s == '+') &&
         (isdigit((*s)[1]) || ((*s)[1] == '.' && isdigit((*s)[2]))) &&
         (!last_token || last_token->type == SQL_OPERATOR ||

@@ -66,23 +66,23 @@ int main(int argc, char **argv) {
     printf(">> Tokens:\n\n");
     sql_token_print(tokens, token_count);
 
-    sql_ast_node_t *ast = build_ast(&context, tokens, token_count);
+    sql_ast_node_t *ast = sql_build_ast(&context, tokens, token_count);
     printf("\n\n>> AST Tree:\n\n");
 
     if (ast) {
-        print_ast(ast, 0);
-        sql_node_t *func_node = convert_ast_to_node(&context, ast);
+        sql_print_ast(ast, 0);
+        sql_node_t *func_node = sql_convert_ast_to_node(&context, ast);
         printf("\n\n>> Expression as function tree before type conversions:\n\n");
-        print_node(&context, func_node, 0);
+        sql_print_node(&context, func_node, 0);
         apply_type_conversions(&context, func_node);
         printf("\n\n>> Expression as function tree before simplification:\n\n");
-        print_node(&context, func_node, 0);
-        simplify_func_tree(&context, func_node);
+        sql_print_node(&context, func_node, 0);
+        sql_simplify_func_tree(&context, func_node);
         printf("\n\n>> Expression as function tree after simplification:\n\n");
-        print_node(&context, func_node, 0);
-        simplify_logical_expressions(func_node);
+        sql_print_node(&context, func_node, 0);
+        sql_simplify_logical_expressions(func_node);
         printf("\n\n>> Expression as function tree after logical simplification:\n\n");
-        print_node(&context, func_node, 0);
+        sql_print_node(&context, func_node, 0);
     }
 
     printf("\n\n\n");

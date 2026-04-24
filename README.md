@@ -151,8 +151,8 @@ Fields: token `type`, textual `value`, inferred `data_type`, optional top-level 
 
 API:
 
-* `build_ast(...)` builds the AST from tokens, parsing the entire stream as a single continuous expression.
-* `print_ast(node, depth)` for debugging.
+* `sql_build_ast(...)` builds the AST from tokens, parsing the entire stream as a single continuous expression.
+* `sql_print_ast(node, depth)` for debugging.
 
 ### Evaluable Node (`sql_node_t`)
 
@@ -166,7 +166,7 @@ Adds:
 
 Creation helpers: `sql_bool_init`, `sql_int_init`, `sql_double_init`, `sql_string_init`, `sql_compound_init`, `sql_datetime_init`, `sql_function_init`, `sql_list_init`.
 
-Transform helpers: `convert_ast_to_node`, `apply_type_conversions`, `simplify_tree`, `simplify_func_tree`, `simplify_logical_expressions`, `copy_nodes`, `print_node`.
+Transform helpers: `sql_convert_ast_to_node`, `apply_type_conversions`, `sql_simplify_tree`, `sql_simplify_func_tree`, `sql_simplify_logical_expressions`, `sql_copy_nodes`, `sql_print_node`.
 
 -----
 
@@ -183,9 +183,9 @@ Used to interpret compound time literals (e.g., `INTERVAL '1 DAY'`).
 1.  **Initialize Context** (`sql_ctx_t ctx = {0}; register_ctx(&ctx);`).
 2.  **Register Additional Specs / Keywords** as needed.
 3.  **Tokenize** input SQL expression.
-4.  **Build AST** via `build_ast`.
-5.  **Convert AST → Nodes** (`convert_ast_to_node`).
-6.  **Apply Simplifications** (`simplify_tree`, `simplify_logical_expressions`, etc.).
+4.  **Build AST** via `sql_build_ast`.
+5.  **Convert AST → Nodes** (`sql_convert_ast_to_node`).
+6.  **Apply Simplifications** (`sql_simplify_tree`, `sql_simplify_logical_expressions`, etc.).
 7.  **Bind / Update Functions** via spec `update` callbacks (during conversion / simplify phase).
 8.  **Evaluate** root with `sql_eval` (which invokes node `func` callbacks recursively).
 9.  **Inspect Messages** (errors/warnings) if evaluation failed or partial.
@@ -247,13 +247,13 @@ int main() {
     sql_token_t **tokens = sql_tokenize(&ctx, expr, &token_count);
     sql_token_print(tokens, token_count);
 
-    sql_ast_node_t *ast = build_ast(&ctx, tokens, token_count);
-    print_ast(ast, 0);
+    sql_ast_node_t *ast = sql_build_ast(&ctx, tokens, token_count);
+    sql_print_ast(ast, 0);
 
-    sql_node_t *root = convert_ast_to_node(&ctx, ast);
+    sql_node_t *root = sql_convert_ast_to_node(&ctx, ast);
     
     apply_type_conversions(&ctx, root);
-    simplify_tree(&ctx, root);
+    sql_simplify_tree(&ctx, root);
 
     sql_node_t *result = sql_eval(&ctx, root);
     // Inspect result->data_type and union for value

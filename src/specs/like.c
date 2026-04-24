@@ -131,7 +131,7 @@ static bool _sql_old_ilike(const char *value, const char *pattern) {
     return *p == '\0';  // Ensure full pattern is matched
 }
 
-sql_node_t *sql_like(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_like(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -143,7 +143,7 @@ sql_node_t *sql_like(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, _sql_ilike(value->value.string_value, pattern->value.string_value), false);
 }
 
-sql_node_t *sql_not_like(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_not_like(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *result = sql_like(ctx, f);
     if (!result) {
         return sql_bool_init(ctx, false, true);
@@ -207,13 +207,13 @@ static sql_ctx_spec_update_t *update_not_like_spec(sql_ctx_t *ctx, sql_ctx_spec_
 }
 
 // Specifications for LIKE and NOT LIKE
-sql_ctx_spec_t like_function_spec = {
+static sql_ctx_spec_t like_function_spec = {
     .name = "LIKE",
     .description = "Checks if a value matches a pattern.",
     .update = update_like_spec
 };
 
-sql_ctx_spec_t not_like_function_spec = {
+static sql_ctx_spec_t not_like_function_spec = {
     .name = "NOT LIKE",
     .description = "Checks if a value does not match a pattern.",
     .update = update_not_like_spec

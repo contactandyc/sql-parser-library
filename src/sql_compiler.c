@@ -28,7 +28,7 @@ static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
 
             if (!is_list && rs && rs->count == 1 && rs->num_columns == 1) {
                 // --- SCALAR SUBQUERY ---
-                sql_node_t *literal = copy_nodes(ctx, rs->rows[0].columns[0]);
+                sql_node_t *literal = sql_copy_nodes(ctx, rs->rows[0].columns[0]);
                 if (literal) {
                     *node = *literal;
                 } else {
@@ -43,7 +43,7 @@ static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
                 if (rs->count > 0) {
                     node->parameters = aml_pool_alloc(ctx->pool, rs->count * sizeof(sql_node_t *));
                     for (size_t i = 0; i < rs->count; i++) {
-                        node->parameters[i] = copy_nodes(ctx, rs->rows[i].columns[0]);
+                        node->parameters[i] = sql_copy_nodes(ctx, rs->rows[i].columns[0]);
                     }
                     node->data_type = node->parameters[0]->data_type;
                 } else {
@@ -63,13 +63,13 @@ static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
 
 sql_node_t *sql_compile_expression(sql_ctx_t *ctx, sql_ast_node_t *ast) {
     if (!ast) return NULL;
-    sql_node_t *node = convert_ast_to_node(ctx, ast);
+    sql_node_t *node = sql_convert_ast_to_node(ctx, ast);
 
     evaluate_subqueries(ctx, node);
 
-    apply_type_conversions(ctx, node);
-    simplify_func_tree(ctx, node);
-    simplify_logical_expressions(node);
+    sql_apply_type_conversions(ctx, node);
+    sql_simplify_func_tree(ctx, node);
+    sql_simplify_logical_expressions(node);
     return node;
 }
 

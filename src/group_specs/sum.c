@@ -52,7 +52,7 @@ static sql_ctx_spec_update_t *update_sum_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
     return update;
 }
 
-sql_ctx_spec_t sum_spec = {
+static sql_ctx_spec_t sum_spec = {
     .name = "SUM",
     .description = "Calculates the sum of numeric values.",
     .update = update_sum_spec,

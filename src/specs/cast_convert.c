@@ -9,7 +9,7 @@
 #include <strings.h>
 
 
-sql_node_t *sql_convert_bool_to_int(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_bool_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_int_init(ctx, 0, true);
@@ -17,7 +17,7 @@ sql_node_t *sql_convert_bool_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, child->value.bool_value ? 1 : 0, false);
 }
 
-sql_node_t *sql_convert_bool_to_double(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_bool_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_double_init(ctx, 0.0f, true);
@@ -25,7 +25,7 @@ sql_node_t *sql_convert_bool_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, child->value.bool_value ? 1.0f : 0.0f, false);
 }
 
-sql_node_t *sql_convert_bool_to_string(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_bool_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_string_init(ctx, NULL, true);
@@ -33,7 +33,7 @@ sql_node_t *sql_convert_bool_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_string_init(ctx, child->value.bool_value ? "true" : "false", false);
 }
 
-sql_node_t *sql_convert_int_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_int_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_bool_init(ctx, false, true);
@@ -41,7 +41,7 @@ sql_node_t *sql_convert_int_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, child->value.int_value != 0, false);
 }
 
-sql_node_t *sql_convert_int_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_int_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_datetime_init(ctx, 0, true); // Return NULL
@@ -54,7 +54,7 @@ sql_node_t *sql_convert_int_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_datetime_init(ctx, epoch, false);
 }
 
-sql_node_t *sql_convert_int_to_double(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_int_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_double_init(ctx, 0.0f, true);
@@ -62,7 +62,7 @@ sql_node_t *sql_convert_int_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, (double)child->value.int_value, false);
 }
 
-sql_node_t *sql_convert_int_to_string(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_int_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_string_init(ctx, NULL, true);
@@ -71,7 +71,7 @@ sql_node_t *sql_convert_int_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_string_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_double_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_double_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_bool_init(ctx, false, true);
@@ -79,7 +79,7 @@ sql_node_t *sql_convert_double_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, child->value.double_value != 0.0f, false);
 }
 
-sql_node_t *sql_convert_double_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_double_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_datetime_init(ctx, 0, true); // Return NULL if the value is NULL
@@ -93,7 +93,7 @@ sql_node_t *sql_convert_double_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_datetime_init(ctx, seconds, false); // Assuming we store seconds as epoch time
 }
 
-sql_node_t *sql_convert_double_to_int(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_double_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_int_init(ctx, 0, true);
@@ -101,7 +101,7 @@ sql_node_t *sql_convert_double_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, (int)child->value.double_value, false);
 }
 
-sql_node_t *sql_convert_double_to_string(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_double_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_string_init(ctx, NULL, true);
@@ -110,7 +110,7 @@ sql_node_t *sql_convert_double_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_string_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_string_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_string_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_bool_init(ctx, false, true);
@@ -125,7 +125,7 @@ sql_node_t *sql_convert_string_to_bool(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_string_to_int(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_string_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_int_init(ctx, 0, true);
@@ -137,7 +137,7 @@ sql_node_t *sql_convert_string_to_int(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_string_to_double(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_string_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
         return sql_double_init(ctx, 0.0f, true);
@@ -149,7 +149,7 @@ sql_node_t *sql_convert_string_to_double(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_string_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_string_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
     // Evaluate the parameter
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
@@ -165,14 +165,14 @@ sql_node_t *sql_convert_string_to_datetime(sql_ctx_t *ctx, sql_node_t *f) {
         return sql_compound_init(ctx, date_str, false); // Return the interval string as is
     }
     time_t epoch = 0;
-    if (!convert_string_to_datetime(&epoch, ctx->pool, date_str)) {
+    if (!date_utils_convert_string_to_datetime(&epoch, ctx->pool, date_str)) {
         sql_ctx_error(ctx, "Failed to convert string to datetime: %s\n", date_str);
         return sql_datetime_init(ctx, 0, true); // Return NULL
     }
     return sql_datetime_init(ctx, epoch, false); // Return the datetime value
 }
 
-sql_node_t *sql_convert_datetime_to_string(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_datetime_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     // Evaluate the parameter
     sql_node_t *child = sql_eval(ctx, f->parameters[0]);
     if (!child || child->is_null) {
@@ -185,7 +185,7 @@ sql_node_t *sql_convert_datetime_to_string(sql_ctx_t *ctx, sql_node_t *f) {
         return sql_string_init(ctx, NULL, true);
     }
 
-    char *result = convert_epoch_to_iso_utc(ctx->pool, child->value.epoch);
+    char *result = date_utils_convert_epoch_to_iso_utc(ctx->pool, child->value.epoch);
     if(!result) {
         fprintf(stderr, "Failed to format datetime\n");
         return sql_string_init(ctx, NULL, true);
@@ -193,7 +193,7 @@ sql_node_t *sql_convert_datetime_to_string(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_string_init(ctx, result, false);
 }
 
-sql_node_t *sql_convert_value(sql_ctx_t *ctx, sql_node_t *value, sql_data_type_t target_type) {
+static sql_node_t *sql_convert_value(sql_ctx_t *ctx, sql_node_t *value, sql_data_type_t target_type) {
     if (!value || value->is_null) {
         return sql_bool_init(ctx, false, true);
     }
@@ -269,7 +269,7 @@ sql_node_t *sql_convert_value(sql_ctx_t *ctx, sql_node_t *value, sql_data_type_t
     return convert_node;
 }
 
-sql_node_t *sql_convert_list_to_type(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_convert_list_to_type(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *list = sql_eval(ctx, f->parameters[0]);
     if (!list || list->is_null || list->type != SQL_LIST) {
         return sql_bool_init(ctx, false, true);
@@ -417,19 +417,19 @@ static sql_ctx_spec_update_t *update_convert_spec(sql_ctx_t *ctx, sql_ctx_spec_t
 }
 
 // Specification for CONVERT function
-sql_ctx_spec_t convert_spec = {
+static sql_ctx_spec_t convert_spec = {
     .name = "CONVERT",
     .description = "Converts a value to a specified type.",
     .update = update_convert_spec
 };
 
-sql_ctx_spec_t cast_spec = {
+static sql_ctx_spec_t cast_spec = {
     .name = "CAST",
     .description = "Converts a value to a specified type.",
     .update = update_convert_spec
 };
 
-sql_ctx_spec_t cast_operator_spec = {
+static sql_ctx_spec_t cast_operator_spec = {
     .name = "::",
     .description = "Converts a value to a specified type.",
     .update = update_convert_spec
@@ -455,6 +455,6 @@ void sql_register_convert(sql_ctx_t *ctx) {
     sql_ctx_register_callback(ctx, sql_convert_string_to_bool, "convert_string_to_bool", "Converts a STRING to a BOOL.");
     sql_ctx_register_callback(ctx, sql_convert_string_to_int, "convert_string_to_int", "Converts a STRING to an INT.");
     sql_ctx_register_callback(ctx, sql_convert_string_to_double, "convert_string_to_double", "Converts a STRING to a DOUBLE.");
-    sql_ctx_register_callback(ctx, sql_convert_string_to_datetime, "convert_string_to_datetime", "Converts a STRING to a DATETIME.");
+    sql_ctx_register_callback(ctx, sql_convert_string_to_datetime, "date_utils_convert_string_to_datetime", "Converts a STRING to a DATETIME.");
     sql_ctx_register_callback(ctx, sql_convert_datetime_to_string, "convert_datetime_to_string", "Converts a DATETIME to a STRING.");
 }

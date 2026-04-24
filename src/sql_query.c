@@ -21,7 +21,7 @@ static sql_ast_node_t *parse_projection_list(sql_ctx_t *context, sql_token_t **t
     sql_ast_node_t *tail = NULL;
 
     while (*pos < end_pos && tokens[*pos]->type != SQL_KEYWORD) {
-        sql_ast_node_t *expr = parse_expression(context, tokens, pos, end_pos);
+        sql_ast_node_t *expr = sql_parse_expression(context, tokens, pos, end_pos);
         if (!expr) break;
 
         if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "AS") == 0) {
@@ -47,12 +47,12 @@ static sql_ast_node_t *parse_projection_list(sql_ctx_t *context, sql_token_t **t
     return head;
 }
 
-static sql_ast_node_t *parse_expression_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *sql_parse_expression_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *head = NULL;
     sql_ast_node_t *tail = NULL;
 
     while (*pos < end_pos && tokens[*pos]->type != SQL_KEYWORD && tokens[*pos]->type != SQL_SEMICOLON) {
-        sql_ast_node_t *expr = parse_expression(context, tokens, pos, end_pos);
+        sql_ast_node_t *expr = sql_parse_expression(context, tokens, pos, end_pos);
         if (!expr) break;
 
         if (!head) head = tail = expr;
@@ -151,7 +151,7 @@ static sql_join_t *parse_join_list(sql_ctx_t *context, sql_token_t **tokens, siz
 
         if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "ON") == 0) {
             (*pos)++;
-            node->on_condition = parse_expression(context, tokens, pos, end_pos);
+            node->on_condition = sql_parse_expression(context, tokens, pos, end_pos);
         } else {
             sql_ctx_error(context, "Expected ON condition after JOIN");
             return head;
@@ -173,7 +173,7 @@ static sql_order_by_t *parse_order_by_list(sql_ctx_t *context, sql_token_t **tok
     while (*pos < end_pos && tokens[*pos]->type != SQL_SEMICOLON && tokens[*pos]->type != SQL_KEYWORD) {
         sql_order_by_t *node = aml_pool_zalloc(context->pool, sizeof(sql_order_by_t));
 
-        node->expr = parse_expression(context, tokens, pos, end_pos);
+        node->expr = sql_parse_expression(context, tokens, pos, end_pos);
         if (!node->expr) return NULL;
         node->is_desc = false;
 
@@ -310,14 +310,14 @@ sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, s
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "WHERE") == 0) {
         (*pos)++;
-        query->where_clause = parse_expression(context, tokens, pos, token_count);
+        query->where_clause = sql_parse_expression(context, tokens, pos, token_count);
     }
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "GROUP") == 0) {
         (*pos)++;
         if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "BY") == 0) {
             (*pos)++;
-            query->group_by = parse_expression_list(context, tokens, pos, token_count);
+            query->group_by = sql_parse_expression_list(context, tokens, pos, token_count);
         } else {
             sql_ctx_error(context, "Expected BY after GROUP");
             return NULL;
@@ -326,7 +326,7 @@ sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, s
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "HAVING") == 0) {
         (*pos)++;
-        query->having_clause = parse_expression(context, tokens, pos, token_count);
+        query->having_clause = sql_parse_expression(context, tokens, pos, token_count);
     }
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "ORDER") == 0) {
@@ -342,12 +342,12 @@ sql_select_t *sql_parse_select_query(sql_ctx_t *context, sql_token_t **tokens, s
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "LIMIT") == 0) {
         (*pos)++;
-        query->limit = parse_expression(context, tokens, pos, token_count);
+        query->limit = sql_parse_expression(context, tokens, pos, token_count);
     }
 
     if (*pos < token_count && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "OFFSET") == 0) {
         (*pos)++;
-        query->offset = parse_expression(context, tokens, pos, token_count);
+        query->offset = sql_parse_expression(context, tokens, pos, token_count);
     }
 
     return query;
@@ -430,7 +430,7 @@ void sql_print_query(sql_select_t *query, int depth) {
 
             for(int i=0; i<depth; i++) printf("  ");
             printf("  ON:\n");
-            print_ast(j->on_condition, depth + 2);
+            sql_print_ast(j->on_condition, depth + 2);
             j = j->next;
         }
     }
@@ -445,7 +445,7 @@ void sql_print_query(sql_select_t *query, int depth) {
         while (col) {
             for(int i=0; i<depth; i++) printf("  ");
             printf("  [Expression] ALIAS: %s\n", col->alias ? col->alias : "(none)");
-            print_ast(col, depth + 2);
+            sql_print_ast(col, depth + 2);
             col = col->next;
         }
     }

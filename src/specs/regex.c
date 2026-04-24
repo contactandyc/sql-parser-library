@@ -42,8 +42,8 @@ static sql_ctx_spec_update_t *update_regexp_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
     return update;
 }
 
-sql_ctx_spec_t regexp_like_spec = { .name = "REGEXP_LIKE", .description = "Regex match", .update = update_regexp_spec };
-sql_ctx_spec_t regexp_op_spec = { .name = "~", .description = "Regex operator", .update = update_regexp_spec };
+static sql_ctx_spec_t regexp_like_spec = { .name = "REGEXP_LIKE", .description = "Regex match", .update = update_regexp_spec };
+static sql_ctx_spec_t regexp_op_spec = { .name = "~", .description = "Regex operator", .update = update_regexp_spec };
 
 void sql_register_regex(sql_ctx_t *ctx) {
     sql_ctx_register_spec(ctx, &regexp_like_spec);

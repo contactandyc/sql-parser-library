@@ -9,6 +9,9 @@
 
 #include "sql-parser-library/sql_ctx.h"
 
+/**
+ * Represents a parsed datetime interval.
+ */
 typedef struct {
     int years;
     int months;
@@ -19,6 +22,9 @@ typedef struct {
     int microseconds;
 } sql_interval_t;
 
+/**
+ * Parses a raw interval string (Standard or ISO-8601) into a structured format.
+ */
 sql_interval_t *sql_interval_parse(sql_ctx_t *context, const char *interval);
 
 #endif /* _sql_interval_H */

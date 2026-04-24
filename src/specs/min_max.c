@@ -221,7 +221,7 @@ static sql_ctx_spec_update_t *update_min_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
     return update;
 }
 
-sql_ctx_spec_t min_function_spec = {
+static sql_ctx_spec_t min_function_spec = {
     .name = "MIN",
     .description = "Returns the minimum value.",
     .update = update_min_spec
@@ -289,7 +289,7 @@ static sql_ctx_spec_update_t *update_max_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
     return update;
 }
 
-sql_ctx_spec_t max_function_spec = {
+static sql_ctx_spec_t max_function_spec = {
     .name = "MAX",
     .description = "Returns the maximum value.",
     .update = update_max_spec

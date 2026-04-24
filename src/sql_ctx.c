@@ -59,19 +59,19 @@ struct sql_ctx_message_s {
 };
 
 void sql_ctx_register_callback(sql_ctx_t *ctx, void *callback, const char *name, const char *description) {
-    register_named_pointer(ctx->pool, &ctx->callbacks, callback, name, description);
+    sql_register_named_pointer(ctx->pool, &ctx->callbacks, callback, name, description);
 }
 
 const char *sql_ctx_get_callback_name(sql_ctx_t *ctx, void *callback) {
-    return get_named_pointer_name(&ctx->callbacks, callback);
+    return sql_get_named_pointer_name(&ctx->callbacks, callback);
 }
 
 const char *sql_ctx_get_callback_description(sql_ctx_t *ctx, void *callback) {
-    return get_named_pointer_description(&ctx->callbacks, callback);
+    return sql_get_named_pointer_description(&ctx->callbacks, callback);
 }
 
 void *sql_ctx_get_callback(sql_ctx_t *ctx, const char *name) {
-    return get_named_pointer_pointer(&ctx->callbacks, name);
+    return sql_get_named_pointer_pointer(&ctx->callbacks, name);
 }
 
 void sql_ctx_reserve_keyword(sql_ctx_t *ctx, const char *keyword) {

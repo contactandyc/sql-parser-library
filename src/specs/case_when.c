@@ -60,7 +60,7 @@ static sql_ctx_spec_update_t *update_case_spec(sql_ctx_t *ctx, sql_ctx_spec_t *s
     return update;
 }
 
-sql_ctx_spec_t case_spec = { .name = "CASE", .description = "CASE evaluation", .update = update_case_spec };
+static sql_ctx_spec_t case_spec = { .name = "CASE", .description = "CASE evaluation", .update = update_case_spec };
 
 void sql_register_case(sql_ctx_t *ctx) {
     sql_ctx_register_spec(ctx, &case_spec);

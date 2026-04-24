@@ -122,7 +122,7 @@ static sql_ctx_spec_update_t *update_coalesce_spec(sql_ctx_t *ctx, sql_ctx_spec_
 }
 
 // COALESCE function spec
-sql_ctx_spec_t coalesce_function_spec = {
+static sql_ctx_spec_t coalesce_function_spec = {
     .name = "COALESCE",
     .description = "Returns the first non-NULL value from the list of arguments.",
     .update = update_coalesce_spec

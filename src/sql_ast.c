@@ -16,7 +16,7 @@ static inline bool is_context_error(sql_ctx_t *context) {
     return context->errors;
 }
 
-sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
+static sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
     sql_ast_node_t *node = (sql_ast_node_t *)aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
     node->type = token->type;
     node->value = token->token ? aml_pool_strdup(context->pool, token->token) : NULL;
@@ -56,7 +56,7 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
                     clean_val[strlen(clean_val)-1] = '\0';
                 }
 
-                if (convert_string_to_datetime(&epoch, context->pool, clean_val)) {
+                if (date_utils_convert_string_to_datetime(&epoch, context->pool, clean_val)) {
                     node->data_type = SQL_TYPE_DATETIME;
                 } else {
                     sql_ctx_error(context, "Invalid timestamp format: %s", token->token);
@@ -87,24 +87,29 @@ sql_ast_node_t *create_ast_node(sql_ctx_t *context, sql_token_t *token) {
     return node;
 }
 
-sql_ast_node_t *parse_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_and_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
-sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
+// sql_parse_expression is exposed in sql_ast.h!
+sql_ast_node_t *sql_parse_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
 
-sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+// Static forward declarations
+static sql_ast_node_t *parse_and_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_comparison(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos);
+static sql_ast_node_t *parse_in_list(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t token_count);
+static size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos, size_t end_pos, sql_token_type_t closing_token_type);
+
+
+static sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_bitwise_and(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -121,7 +126,7 @@ sql_ast_node_t *parse_bitwise_or(sql_ctx_t *context, sql_token_t **tokens, size_
     return left;
 }
 
-sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_bitwise_shift(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -138,7 +143,7 @@ sql_ast_node_t *parse_bitwise_and(sql_ctx_t *context, sql_token_t **tokens, size
     return left;
 }
 
-sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_concatenation(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -157,7 +162,7 @@ sql_ast_node_t *parse_bitwise_shift(sql_ctx_t *context, sql_token_t **tokens, si
     return left;
 }
 
-sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_arithmetic_expression(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -175,7 +180,7 @@ sql_ast_node_t *parse_concatenation(sql_ctx_t *context, sql_token_t **tokens, si
     return left;
 }
 
-sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_term(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -194,7 +199,7 @@ sql_ast_node_t *parse_arithmetic_expression(sql_ctx_t *context, sql_token_t **to
     return left;
 }
 
-sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_exponent(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -212,7 +217,7 @@ sql_ast_node_t *parse_term(sql_ctx_t *context, sql_token_t **tokens, size_t *pos
     return left;
 }
 
-sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_factor(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -229,7 +234,7 @@ sql_ast_node_t *parse_exponent(sql_ctx_t *context, sql_token_t **tokens, size_t 
     return left;
 }
 
-sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     if (*pos < end_pos && (tokens[*pos]->type == SQL_OPERATOR) &&
         ((tokens[*pos]->token[0] == '+' && tokens[*pos]->token[1] == '\0') ||
          (tokens[*pos]->token[0] == '-' && tokens[*pos]->token[1] == '\0') ||
@@ -246,7 +251,7 @@ sql_ast_node_t *parse_factor(sql_ctx_t *context, sql_token_t **tokens, size_t *p
     return parse_json_accessor(context, tokens, pos, end_pos);
 }
 
-sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_ast_node_t *left = parse_primary(context, tokens, pos, end_pos);
     if (is_context_error(context)) return NULL;
 
@@ -264,7 +269,7 @@ sql_ast_node_t *parse_json_accessor(sql_ctx_t *context, sql_token_t **tokens, si
     return left;
 }
 
-size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos,
+static size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos,
                          size_t end_pos, sql_token_type_t closing_token_type) {
     int paren_level = 0;
     int bracket_level = 0;
@@ -309,7 +314,7 @@ size_t find_argument_end(sql_ctx_t *context, sql_token_t **tokens, size_t pos,
     return current_pos;
 }
 
-sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     if (*pos >= end_pos) {
         sql_ctx_error(context, "Unexpected end of tokens in parse_primary");
         return NULL;
@@ -330,10 +335,10 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
             if (strcasecmp(tokens[*pos]->token, "WHEN") == 0) {
                 sql_token_t *when_token = tokens[(*pos)++];
                 clause_node = create_ast_node(context, when_token);
-                clause_node->left = parse_expression(context, tokens, pos, end_pos);
+                clause_node->left = sql_parse_expression(context, tokens, pos, end_pos);
                 if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "THEN") == 0) {
                     (*pos)++;
-                    clause_node->right = parse_expression(context, tokens, pos, end_pos);
+                    clause_node->right = sql_parse_expression(context, tokens, pos, end_pos);
                 } else {
                     sql_ctx_error(context, "Expected THEN after WHEN");
                     return NULL;
@@ -341,7 +346,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
             } else if (strcasecmp(tokens[*pos]->token, "ELSE") == 0) {
                 sql_token_t *else_token = tokens[(*pos)++];
                 clause_node = create_ast_node(context, else_token);
-                clause_node->left = parse_expression(context, tokens, pos, end_pos);
+                clause_node->left = sql_parse_expression(context, tokens, pos, end_pos);
             } else {
                 sql_ctx_error(context, "Expected WHEN, ELSE, or END inside CASE");
                 return NULL;
@@ -416,7 +421,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
             return node;
         }
 
-        sql_ast_node_t *node = parse_expression(context, tokens, pos, end_pos);
+        sql_ast_node_t *node = sql_parse_expression(context, tokens, pos, end_pos);
         if (is_context_error(context)) return NULL;
         if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
             (*pos)++;
@@ -472,7 +477,7 @@ sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, size_t *
     return NULL;
 }
 
-sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     sql_token_t *func_name_token = tokens[*pos - 1];
     sql_ast_node_t *func_node = create_ast_node(context, func_name_token);
     if (is_context_error(context)) return NULL;
@@ -494,7 +499,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
                 return NULL;
             }
 
-            sql_ast_node_t *source_node = parse_expression(context, tokens, pos, end_pos);
+            sql_ast_node_t *source_node = sql_parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
                 (*pos)++;
@@ -511,7 +516,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
         }
 
         if (strcasecmp(func_name_token->token, "CAST") == 0) {
-            sql_ast_node_t *expr_node = parse_expression(context, tokens, pos, end_pos);
+            sql_ast_node_t *expr_node = sql_parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && strcasecmp(tokens[*pos]->token, "AS") == 0) {
                 sql_ast_node_t *as_node = create_ast_node(context, tokens[(*pos)++]);
@@ -545,7 +550,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
                 return NULL;
             }
 
-            sql_ast_node_t *str_node = parse_expression(context, tokens, pos, end_pos);
+            sql_ast_node_t *str_node = sql_parse_expression(context, tokens, pos, end_pos);
 
             if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
                 (*pos)++;
@@ -572,7 +577,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
             if (is_context_error(context)) return NULL;
 
             size_t arg_pos = *pos;
-            sql_ast_node_t *arg = parse_expression(context, tokens, &arg_pos, arg_end);
+            sql_ast_node_t *arg = sql_parse_expression(context, tokens, &arg_pos, arg_end);
             if (!arg) {
                 sql_ctx_error(context, "Error parsing function argument");
                 return NULL;
@@ -608,7 +613,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
                         (*pos)++;
                         sql_ast_node_t *part_head = NULL, *part_tail = NULL;
                         while (*pos < end_pos && tokens[*pos]->type != SQL_KEYWORD && tokens[*pos]->type != SQL_CLOSE_PAREN) {
-                            sql_ast_node_t *expr = parse_expression(context, tokens, pos, end_pos);
+                            sql_ast_node_t *expr = sql_parse_expression(context, tokens, pos, end_pos);
                             if (!expr) break;
                             if (!part_head) part_head = part_tail = expr;
                             else { part_tail->next = expr; part_tail = expr; }
@@ -628,7 +633,7 @@ sql_ast_node_t *parse_function_call(sql_ctx_t *context, sql_token_t **tokens, si
                         sql_order_by_t *ob_head = NULL, *ob_tail = NULL;
                         while (*pos < end_pos && tokens[*pos]->type != SQL_CLOSE_PAREN) {
                             sql_order_by_t *ob_node = aml_pool_zalloc(context->pool, sizeof(sql_order_by_t));
-                            ob_node->expr = parse_expression(context, tokens, pos, end_pos);
+                            ob_node->expr = sql_parse_expression(context, tokens, pos, end_pos);
                             ob_node->is_desc = false;
 
                             if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD) {
@@ -929,7 +934,7 @@ static sql_ast_node_t *parse_not_comparison_expression(sql_ctx_t *context,
     return left;
 }
 
-sql_ast_node_t *parse_comparison(sql_ctx_t *context,
+static sql_ast_node_t *parse_comparison(sql_ctx_t *context,
                                  sql_token_t **tokens,
                                  size_t *pos,
                                  size_t end_pos)
@@ -968,7 +973,7 @@ sql_ast_node_t *parse_comparison(sql_ctx_t *context,
     return left;
 }
 
-sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
+static sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *pos, size_t end_pos) {
     if (*pos < end_pos && tokens[*pos]->type == SQL_NOT) {
         sql_token_t *not_token = tokens[(*pos)++];
         sql_ast_node_t *not_node = create_ast_node(context, not_token);
@@ -981,7 +986,7 @@ sql_ast_node_t *parse_unary(sql_ctx_t *context, sql_token_t **tokens, size_t *po
     return parse_comparison(context, tokens, pos, end_pos);
 }
 
-sql_ast_node_t *parse_and_expression(sql_ctx_t *context,
+static sql_ast_node_t *parse_and_expression(sql_ctx_t *context,
                                      sql_token_t **tokens,
                                      size_t *pos,
                                      size_t end_pos)
@@ -1013,7 +1018,7 @@ sql_ast_node_t *parse_and_expression(sql_ctx_t *context,
     return left;
 }
 
-sql_ast_node_t *parse_expression(sql_ctx_t *context,
+sql_ast_node_t *sql_parse_expression(sql_ctx_t *context,
                                  sql_token_t **tokens,
                                  size_t *pos,
                                  size_t end_pos)
@@ -1043,12 +1048,11 @@ sql_ast_node_t *parse_expression(sql_ctx_t *context,
     return left;
 }
 
-sql_ast_node_t *parse_in_list(sql_ctx_t *context,
+static sql_ast_node_t *parse_in_list(sql_ctx_t *context,
                               sql_token_t **tokens,
                               size_t *pos,
                               size_t token_count)
 {
-    // --- FIX: IN (SELECT ...) Subquery Support ---
     if (*pos < token_count && tokens[*pos]->type == SQL_OPEN_PAREN) {
         if (*pos + 1 < token_count && tokens[*pos + 1]->type == SQL_KEYWORD && strcasecmp(tokens[*pos + 1]->token, "SELECT") == 0) {
             (*pos)++;
@@ -1101,7 +1105,7 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context,
             if (is_context_error(context)) return NULL;
 
             size_t expr_pos = *pos;
-            sql_ast_node_t *expr = parse_expression(context, tokens, &expr_pos, expr_end);
+            sql_ast_node_t *expr = sql_parse_expression(context, tokens, &expr_pos, expr_end);
             if (!expr) {
                 sql_ctx_error(context, "Error parsing expression in IN list");
                 break;
@@ -1130,10 +1134,10 @@ sql_ast_node_t *parse_in_list(sql_ctx_t *context,
     return list_node;
 }
 
-sql_ast_node_t *build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token_count) {
+sql_ast_node_t *sql_build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token_count) {
     if (token_count == 0) return NULL;
     size_t pos = 0;
-    sql_ast_node_t *root = parse_expression(context, tokens, &pos, token_count);
+    sql_ast_node_t *root = sql_parse_expression(context, tokens, &pos, token_count);
 
     if (is_context_error(context)) return NULL;
 
@@ -1145,7 +1149,7 @@ sql_ast_node_t *build_ast(sql_ctx_t *context, sql_token_t **tokens, size_t token
     return root;
 }
 
-void print_ast(sql_ast_node_t *node, int depth) {
+void sql_print_ast(sql_ast_node_t *node, int depth) {
     if (!node) return;
 
     for (int i = 0; i < depth; i++) printf("  ");
@@ -1167,14 +1171,14 @@ void print_ast(sql_ast_node_t *node, int depth) {
         if (node->window_clause->partition_by) {
             for (int i = 0; i < depth + 2; i++) printf("  ");
             printf("PARTITION BY:\n");
-            print_ast(node->window_clause->partition_by, depth + 3);
+            sql_print_ast(node->window_clause->partition_by, depth + 3);
         }
         if (node->window_clause->order_by) {
             for (int i = 0; i < depth + 2; i++) printf("  ");
             printf("ORDER BY:\n");
             sql_order_by_t *ob = node->window_clause->order_by;
             while(ob) {
-                print_ast(ob->expr, depth + 3);
+                sql_print_ast(ob->expr, depth + 3);
                 ob = ob->next;
             }
         }
@@ -1187,17 +1191,17 @@ void print_ast(sql_ast_node_t *node, int depth) {
     {
         for (int i = 0; i < depth + 1; i++) printf("  ");
         printf("Expression:\n");
-        print_ast(node->left, depth + 2);
+        sql_print_ast(node->left, depth + 2);
 
         if (node->right) {
             sql_ast_node_t *bounds_node = node->right;
             for (int i = 0; i < depth + 1; i++) printf("  ");
             printf("Lower Bound:\n");
-            print_ast(bounds_node->left, depth + 2);
+            sql_print_ast(bounds_node->left, depth + 2);
 
             for (int i = 0; i < depth + 1; i++) printf("  ");
             printf("Upper Bound:\n");
-            print_ast(bounds_node->right, depth + 2);
+            sql_print_ast(bounds_node->right, depth + 2);
         }
     }
     else if (node->type == SQL_COMPARISON &&
@@ -1207,29 +1211,29 @@ void print_ast(sql_ast_node_t *node, int depth) {
     {
         for (int i = 0; i < depth + 1; i++) printf("  ");
         printf("Expression:\n");
-        print_ast(node->left, depth + 2);
+        sql_print_ast(node->left, depth + 2);
 
         if (node->right && node->right->left) {
             for (int i = 0; i < depth + 1; i++) printf("  ");
             printf("Values:\n");
             sql_ast_node_t *value_node = node->right->left;
-            print_ast(value_node, depth + 2);
+            sql_print_ast(value_node, depth + 2);
         }
     }
     else if (node->left && node->right) {
         for (int i = 0; i < depth + 1; i++) printf("  ");
         printf("Left:\n");
-        print_ast(node->left, depth + 2);
+        sql_print_ast(node->left, depth + 2);
 
         for (int i = 0; i < depth + 1; i++) printf("  ");
         printf("Right:\n");
-        print_ast(node->right, depth + 2);
+        sql_print_ast(node->right, depth + 2);
     }
     else if (node->left) {
-        print_ast(node->left, depth + 1);
+        sql_print_ast(node->left, depth + 1);
     }
 
     if (node->next) {
-        print_ast(node->next, depth);
+        sql_print_ast(node->next, depth);
     }
 }

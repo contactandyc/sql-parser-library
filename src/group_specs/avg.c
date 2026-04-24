@@ -65,7 +65,7 @@ static sql_ctx_spec_update_t *update_avg_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
     return update;
 }
 
-sql_ctx_spec_t avg_spec = {
+static sql_ctx_spec_t avg_spec = {
     .name = "AVG",
     .description = "Calculates the average of numeric values.",
     .update = update_avg_spec,

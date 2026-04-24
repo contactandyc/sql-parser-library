@@ -30,7 +30,7 @@ static sql_ctx_spec_update_t *update_row_num(sql_ctx_t *ctx, sql_ctx_spec_t *spe
     return u;
 }
 
-sql_ctx_spec_t row_number_spec = {
+static sql_ctx_spec_t row_number_spec = {
     .name = "ROW_NUMBER",
     .description = "Returns sequential row number within a partition.",
     .update = update_row_num,

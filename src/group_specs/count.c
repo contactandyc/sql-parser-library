@@ -56,7 +56,7 @@ static sql_ctx_spec_update_t *update_count_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t count_spec = {
+static sql_ctx_spec_t count_spec = {
     .name = "COUNT",
     .description = "Calculates the number of rows.",
     .update = update_count_spec,

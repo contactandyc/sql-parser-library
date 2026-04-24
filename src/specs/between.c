@@ -8,7 +8,7 @@
 #include "sql-parser-library/sql_ctx.h"
 #include "sql-parser-library/date_utils.h"
 
-sql_node_t *sql_int_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_between(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 3) {
         return sql_bool_init(ctx, false, true);
     }
@@ -21,7 +21,7 @@ sql_node_t *sql_int_between(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.int_value <= value->value.int_value && value->value.int_value <= right->value.int_value, false);
 }
 
-sql_node_t *sql_double_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_between(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 3) {
         return sql_bool_init(ctx, false, true);
     }
@@ -34,7 +34,7 @@ sql_node_t *sql_double_between(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.double_value <= value->value.double_value && value->value.double_value <= right->value.double_value, false);
 }
 
-sql_node_t *sql_string_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_between(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 3) {
         return sql_bool_init(ctx, false, true);
     }
@@ -47,7 +47,7 @@ sql_node_t *sql_string_between(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, strcasecmp(left->value.string_value, value->value.string_value) <= 0 && strcasecmp(value->value.string_value, right->value.string_value) <= 0, false);
 }
 
-sql_node_t *sql_datetime_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_between(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 3) {
         return sql_bool_init(ctx, false, true);
     }
@@ -61,7 +61,7 @@ sql_node_t *sql_datetime_between(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.epoch <= value->value.epoch && value->value.epoch <= right->value.epoch, false);
 }
 
-sql_node_t *sql_int_not_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *result = sql_int_between(ctx, f);
     if (!result) {
         return sql_bool_init(ctx, false, true);
@@ -70,7 +70,7 @@ sql_node_t *sql_int_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     return result;
 }
 
-sql_node_t *sql_double_not_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *result = sql_double_between(ctx, f);
     if (!result) {
         return sql_bool_init(ctx, false, true);
@@ -79,7 +79,7 @@ sql_node_t *sql_double_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     return result;
 }
 
-sql_node_t *sql_string_not_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *result = sql_string_between(ctx, f);
     if (!result) {
         return sql_bool_init(ctx, false, true);
@@ -88,7 +88,7 @@ sql_node_t *sql_string_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     return result;
 }
 
-sql_node_t *sql_datetime_not_between(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_not_between(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *result = sql_datetime_between(ctx, f);
     if (!result) {
         return sql_bool_init(ctx, false, true);
@@ -214,13 +214,13 @@ static sql_ctx_spec_update_t *update_not_between_spec(sql_ctx_t *ctx, sql_ctx_sp
 }
 
 // Specifications for BETWEEN and NOT BETWEEN
-sql_ctx_spec_t between_function_spec = {
+static sql_ctx_spec_t between_function_spec = {
     .name = "BETWEEN",
     .description = "Checks if a value is between two values.",
     .update = update_between_spec
 };
 
-sql_ctx_spec_t not_between_function_spec = {
+static sql_ctx_spec_t not_between_function_spec = {
     .name = "NOT BETWEEN",
     .description = "Checks if a value is not between two values.",
     .update = update_not_between_spec

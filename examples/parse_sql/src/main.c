@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
         aml_pool_t *test_pool = aml_pool_init(1024 * 1024);
         sql_ctx_t ctx = {0};
         ctx.pool = test_pool;
-        register_ctx(&ctx);
+        sql_register_ctx(&ctx);
 
         // Tokenize
         size_t token_count = 0;

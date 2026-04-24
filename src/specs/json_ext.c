@@ -80,13 +80,13 @@ static sql_ctx_spec_update_t *update_json_spec(sql_ctx_t *ctx, sql_ctx_spec_t *s
 // REGISTRATION
 // -----------------------------------------------------------------------------
 
-sql_ctx_spec_t json_extract_spec = {
+static sql_ctx_spec_t json_extract_spec = {
     .name = "JSON_EXTRACT",
     .description = "Extracts data from a JSON string using a JSON path.",
     .update = update_json_spec
 };
 
-sql_ctx_spec_t json_op_spec = {
+static sql_ctx_spec_t json_op_spec = {
     .name = "->>",
     .description = "Extracts data from a JSON string using a JSON path (PostgreSQL style).",
     .update = update_json_spec

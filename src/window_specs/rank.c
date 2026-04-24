@@ -39,7 +39,7 @@ static sql_ctx_spec_update_t *update_rank(sql_ctx_t *ctx, sql_ctx_spec_t *spec, 
     return u;
 }
 
-sql_ctx_spec_t rank_spec = {
+static sql_ctx_spec_t rank_spec = {
     .name = "RANK",
     .description = "Returns rank of the current row with gaps.",
     .update = update_rank,

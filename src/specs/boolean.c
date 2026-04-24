@@ -106,19 +106,19 @@ static sql_ctx_spec_update_t *update_not_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
 }
 
 // Function Specifications
-sql_ctx_spec_t and_function_spec = {
+static sql_ctx_spec_t and_function_spec = {
     .name = "AND",
     .description = "Logical AND operation.",
     .update = update_and_spec
 };
 
-sql_ctx_spec_t or_function_spec = {
+static sql_ctx_spec_t or_function_spec = {
     .name = "OR",
     .description = "Logical OR operation.",
     .update = update_or_spec
 };
 
-sql_ctx_spec_t not_function_spec = {
+static sql_ctx_spec_t not_function_spec = {
     .name = "NOT",
     .description = "Logical NOT operation.",
     .update = update_not_spec

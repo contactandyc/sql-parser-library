@@ -20,7 +20,7 @@ time_t custom_timegm(struct tm *tm) {
 #define timegm custom_timegm
 #endif
 
-const char *get_timezone(const char *date_str) {
+const char *date_utils_get_timezone(const char *date_str) {
     if(!date_str) {
         return NULL;
     }
@@ -49,7 +49,7 @@ const char *get_timezone(const char *date_str) {
     return NULL;
 }
 
-int get_timezone_offset(const char *timezone_part) {
+int date_utils_get_timezone_offset(const char *timezone_part) {
     // Handle the timezone offset if present
     int tz_offset_seconds = 0;
     if (timezone_part) {
@@ -77,7 +77,7 @@ int get_timezone_offset(const char *timezone_part) {
     return tz_offset_seconds;
 }
 
-bool convert_string_to_datetime(time_t *result, aml_pool_t *pool, const char *date_str) {
+bool date_utils_convert_string_to_datetime(time_t *result, aml_pool_t *pool, const char *date_str) {
     if (!date_str || strlen(date_str) == 0) {
         return false;
     }
@@ -95,12 +95,12 @@ bool convert_string_to_datetime(time_t *result, aml_pool_t *pool, const char *da
 
     char *date_part = (char *)date_str;
     // Copy the input string to a modifiable buffer
-    const char *timezone = get_timezone(date_part);
+    const char *timezone = date_utils_get_timezone(date_part);
     if(timezone) {
         size_t datetime_len = timezone - date_part;
         date_part = (char *)aml_pool_strndup(pool, date_part, datetime_len);
     }
-    int tz_offset_seconds = get_timezone_offset(timezone);
+    int tz_offset_seconds = date_utils_get_timezone_offset(timezone);
     if(tz_offset_seconds == -1) {
         return false;
     }
@@ -186,7 +186,7 @@ bool convert_string_to_datetime(time_t *result, aml_pool_t *pool, const char *da
     return true;
 }
 
-char *convert_epoch_to_iso_utc(aml_pool_t *pool, time_t epoch) {
+char *date_utils_convert_epoch_to_iso_utc(aml_pool_t *pool, time_t epoch) {
     struct tm tm_info;
     gmtime_r(&epoch, &tm_info); // Convert epoch to UTC time
 

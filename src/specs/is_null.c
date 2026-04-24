@@ -74,13 +74,13 @@ static sql_ctx_spec_update_t *update_is_not_null_spec(sql_ctx_t *ctx, sql_ctx_sp
 }
 
 // Specifications for IS NULL and IS NOT NULL
-sql_ctx_spec_t is_null_function_spec = {
+static sql_ctx_spec_t is_null_function_spec = {
     .name = "IS NULL",
     .description = "Checks if a value is NULL.",
     .update = update_is_null_spec
 };
 
-sql_ctx_spec_t is_not_null_function_spec = {
+static sql_ctx_spec_t is_not_null_function_spec = {
     .name = "IS NOT NULL",
     .description = "Checks if a value is NOT NULL.",
     .update = update_is_not_null_spec

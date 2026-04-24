@@ -13,7 +13,7 @@ static time_t adjust_time_by_seconds(time_t base_time, double seconds) {
     return base_time + (time_t)seconds;
 }
 
-sql_node_t *sql_int_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_add(sql_ctx_t *ctx, sql_node_t *f) {
     int result = 0;
     for( size_t i = 0; i < f->num_parameters; i++ ) {
         sql_node_t *child = sql_eval(ctx, f->parameters[i]);
@@ -25,7 +25,7 @@ sql_node_t *sql_int_add(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, result, false);
 }
 
-sql_node_t *sql_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right = sql_eval(ctx, f->parameters[1]);
     if (!left || !right || left->is_null || right->is_null) {
@@ -34,7 +34,7 @@ sql_node_t *sql_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, left->value.int_value - right->value.int_value, false);
 }
 
-sql_node_t *sql_int_multiply(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_multiply(sql_ctx_t *ctx, sql_node_t *f) {
     int result = 1;
     for( size_t i = 0; i < f->num_parameters; i++ ) {
         sql_node_t *child = sql_eval(ctx, f->parameters[i]);
@@ -46,7 +46,7 @@ sql_node_t *sql_int_multiply(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, result, false);
 }
 
-sql_node_t *sql_int_divide(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_divide(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right = sql_eval(ctx, f->parameters[1]);
     if (!left || !right || left->is_null || right->is_null || right->value.int_value == 0) {
@@ -57,7 +57,7 @@ sql_node_t *sql_int_divide(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, a / b, false);
 }
 
-sql_node_t *sql_double_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_add(sql_ctx_t *ctx, sql_node_t *f) {
     double result = 0;
     for( size_t i = 0; i < f->num_parameters; i++ ) {
         sql_node_t *child = sql_eval(ctx, f->parameters[i]);
@@ -69,7 +69,7 @@ sql_node_t *sql_double_add(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, result, false);
 }
 
-sql_node_t *sql_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right = sql_eval(ctx, f->parameters[1]);
     if (!left || !right || left->is_null || right->is_null) {
@@ -78,7 +78,7 @@ sql_node_t *sql_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, left->value.double_value - right->value.double_value, false);
 }
 
-sql_node_t *sql_double_multiply(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_multiply(sql_ctx_t *ctx, sql_node_t *f) {
     double result = 1;
     for( size_t i = 0; i < f->num_parameters; i++ ) {
         sql_node_t *child = sql_eval(ctx, f->parameters[i]);
@@ -90,7 +90,7 @@ sql_node_t *sql_double_multiply(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, result, false);
 }
 
-sql_node_t *sql_double_divide(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_divide(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right = sql_eval(ctx, f->parameters[1]);
     if (!left || !right || left->is_null || right->is_null || right->value.double_value == 0) {
@@ -99,7 +99,7 @@ sql_node_t *sql_double_divide(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_double_init(ctx, left->value.double_value / right->value.double_value, false);
 }
 
-sql_node_t *sql_string_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_add(sql_ctx_t *ctx, sql_node_t *f) {
     char *result = NULL;
     for( size_t i = 0; i < f->num_parameters; i++ ) {
         sql_node_t *child = sql_eval(ctx, f->parameters[i]);
@@ -117,7 +117,7 @@ sql_node_t *sql_string_add(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Add an integer value to a datetime (assumes days)
-sql_node_t *sql_datetime_int_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_int_add(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *int_node = sql_eval(ctx, f->parameters[1]);
 
@@ -131,7 +131,7 @@ sql_node_t *sql_datetime_int_add(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Subtract an integer value from a datetime (assumes days)
-sql_node_t *sql_datetime_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *int_node = sql_eval(ctx, f->parameters[1]);
 
@@ -145,7 +145,7 @@ sql_node_t *sql_datetime_int_subtract(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Add a double value to a datetime (assumes fractional days)
-sql_node_t *sql_datetime_double_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_double_add(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *double_node = sql_eval(ctx, f->parameters[1]);
 
@@ -159,7 +159,7 @@ sql_node_t *sql_datetime_double_add(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Subtract a double value from a datetime (assumes fractional days)
-sql_node_t *sql_datetime_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *double_node = sql_eval(ctx, f->parameters[1]);
 
@@ -173,7 +173,7 @@ sql_node_t *sql_datetime_double_subtract(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Subtract two datetime values (returns days between them)
-sql_node_t *sql_datetime_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *left_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *right_node = sql_eval(ctx, f->parameters[1]);
 
@@ -189,7 +189,7 @@ sql_node_t *sql_datetime_subtract(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Add an interval string to a datetime
-sql_node_t *sql_datetime_interval_add(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_interval_add(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *interval_node = sql_eval(ctx, f->parameters[1]);
 
@@ -218,7 +218,7 @@ sql_node_t *sql_datetime_interval_add(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Subtract an interval string from a datetime
-sql_node_t *sql_datetime_interval_subtract(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_interval_subtract(sql_ctx_t *ctx, sql_node_t *f) {
     sql_node_t *datetime_node = sql_eval(ctx, f->parameters[0]);
     sql_node_t *interval_node = sql_eval(ctx, f->parameters[1]);
 
@@ -252,8 +252,6 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
         return NULL;
     }
 
-    // --- FIX 3: The Commutative Trap (e.g., 30 + shipdate -> shipdate + 30) ---
-    // If we are adding, and the right side is a DATETIME but the left is not, swap them!
     if (f->num_parameters == 2 && strcmp(spec->name, "+") == 0) {
         if (f->parameters[1]->data_type == SQL_TYPE_DATETIME &&
             f->parameters[0]->data_type != SQL_TYPE_DATETIME) {
@@ -264,7 +262,6 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
         }
     }
 
-    // --- FIX 1: Implicit Coercion for STRING (+|-) INTERVAL ---
     if (f->parameters[0]->data_type == SQL_TYPE_STRING &&
         f->parameters[1]->type == SQL_COMPOUND_LITERAL &&
         f->parameters[1]->token &&
@@ -273,7 +270,6 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
         f->parameters[0] = sql_convert(ctx, f->parameters[0], SQL_TYPE_DATETIME);
     }
 
-    // --- FIX 2: Implicit Coercion for DATETIME - STRING (Date Diffing) ---
     if (f->parameters[0]->data_type == SQL_TYPE_DATETIME &&
         f->parameters[1]->data_type == SQL_TYPE_STRING) {
 
@@ -281,7 +277,6 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
                             f->parameters[1]->token &&
                             strncasecmp(f->parameters[1]->token, "INTERVAL", 8) == 0);
 
-        // If it's a regular string like '1995-04-13', cast it to DATETIME
         if (!is_interval) {
             f->parameters[1] = sql_convert(ctx, f->parameters[1], SQL_TYPE_DATETIME);
         }
@@ -317,12 +312,10 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
     update->return_type = data_type;
     const char *name = spec->name;
 
-    // special case for datetime - datetime
     if (data_type == SQL_TYPE_DATETIME && f->num_parameters > 1 && f->parameters[1]->data_type == SQL_TYPE_DATETIME && strcmp(name, "-") == 0) {
         update->return_type = SQL_TYPE_DOUBLE;
     }
 
-    // Determine the correct implementation based on the operator and type
     if (data_type == SQL_TYPE_INT) {
         if (strcmp(name, "+") == 0) update->implementation = sql_int_add;
         else if (strcmp(name, "-") == 0) update->implementation = sql_int_subtract;
@@ -365,25 +358,25 @@ static sql_ctx_spec_update_t *update_arithmetic_spec(sql_ctx_t *ctx, sql_ctx_spe
     return update;
 }
 
-sql_ctx_spec_t add_spec = {
+static sql_ctx_spec_t add_spec = {
     .name = "+",
     .description = "Addition operator",
     .update = update_arithmetic_spec
 };
 
-sql_ctx_spec_t subtract_spec = {
+static sql_ctx_spec_t subtract_spec = {
     .name = "-",
     .description = "Subtraction operator",
     .update = update_arithmetic_spec
 };
 
-sql_ctx_spec_t multiply_spec = {
+static sql_ctx_spec_t multiply_spec = {
     .name = "*",
     .description = "Multiplication operator",
     .update = update_arithmetic_spec
 };
 
-sql_ctx_spec_t divide_spec = {
+static sql_ctx_spec_t divide_spec = {
     .name = "/",
     .description = "Division operator",
     .update = update_arithmetic_spec

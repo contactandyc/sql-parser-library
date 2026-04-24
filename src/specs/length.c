@@ -49,7 +49,7 @@ static sql_ctx_spec_update_t *update_length_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
 }
 
 // LENGTH function spec
-sql_ctx_spec_t length_function_spec = {
+static sql_ctx_spec_t length_function_spec = {
     .name = "LENGTH",
     .description = "Returns the length of a string.",
     .update = update_length_spec

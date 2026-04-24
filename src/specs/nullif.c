@@ -79,7 +79,7 @@ static sql_ctx_spec_update_t *update_nullif_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
     return update;
 }
 
-sql_ctx_spec_t nullif_spec = {
+static sql_ctx_spec_t nullif_spec = {
     .name = "NULLIF",
     .description = "Returns NULL if the two expressions are equal, otherwise returns the first.",
     .update = update_nullif_spec

@@ -583,7 +583,7 @@ int main(int argc, char **argv) {
             aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
             sql_ctx_t context = {0};
             context.pool = pool;
-            register_ctx(&context);
+            sql_register_ctx(&context);
 
             sql_vm_t *vm = sql_vm_init(&context, my_fetch_table, my_resolve_col, NULL);
 
@@ -607,7 +607,7 @@ int main(int argc, char **argv) {
             aml_pool_t *pool = aml_pool_init(1024 * 1024 * 50);
             sql_ctx_t context = {0};
             context.pool = pool;
-            register_ctx(&context);
+            sql_register_ctx(&context);
 
             sql_vm_t *vm = sql_vm_init(&context, my_fetch_table, my_resolve_col, NULL);
 

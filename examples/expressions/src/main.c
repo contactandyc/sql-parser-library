@@ -67,7 +67,7 @@ static sql_node_t *my_col_getter(sql_ctx_t *ctx, sql_node_t *f) {
             const char *strval = ajson_to_strd(ctx->pool, valnode, "");
             if(strchr(strval, '-') != NULL || strlen(strval) == 4) {
                 time_t epoch;
-                if(convert_string_to_datetime(&epoch, ctx->pool, strval)) {
+                if(date_utils_convert_string_to_datetime(&epoch, ctx->pool, strval)) {
                     return sql_datetime_init(ctx, epoch, false);
                 }
                 return sql_datetime_init(ctx, 0, true);
@@ -170,7 +170,7 @@ static void run_one_query(my_table_t *table, const char *sql, char **expected_id
     ctx->pool = g_pool;
     ctx->schema_lookup = expression_catalog_lookup;
     ctx->catalog_state = table;
-    register_ctx(ctx);
+    sql_register_ctx(ctx);
 
     printf("  [TEST] %s", sql);
 
@@ -181,7 +181,7 @@ static void run_one_query(my_table_t *table, const char *sql, char **expected_id
         return;
     }
 
-    sql_ast_node_t *ast = build_ast(ctx, tokens, token_count);
+    sql_ast_node_t *ast = sql_build_ast(ctx, tokens, token_count);
     if (!ast) {
         printf(" => FAILED (AST Build)\n");
         return;
@@ -190,10 +190,10 @@ static void run_one_query(my_table_t *table, const char *sql, char **expected_id
     sql_node_t *expr_node = NULL;
     if (ast) {
         sql_bind_expression(ctx, ast);
-        expr_node = convert_ast_to_node(ctx, ast);
-        apply_type_conversions(ctx, expr_node);
-        simplify_func_tree(ctx, expr_node);
-        simplify_logical_expressions(expr_node);
+        expr_node = sql_convert_ast_to_node(ctx, ast);
+        sql_apply_type_conversions(ctx, expr_node);
+        sql_simplify_func_tree(ctx, expr_node);
+        sql_simplify_logical_expressions(expr_node);
     }
 
     int id_col_index = -1;

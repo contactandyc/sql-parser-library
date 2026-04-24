@@ -142,7 +142,7 @@ static sql_ctx_spec_update_t *update_round_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t round_spec = {
+static sql_ctx_spec_t round_spec = {
     .name = "ROUND",
     .description = "Rounds a number to the nearest integer or specified decimal places.",
     .update = update_round_spec
@@ -165,7 +165,7 @@ static sql_ctx_spec_update_t *update_floor_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t floor_spec = {
+static sql_ctx_spec_t floor_spec = {
     .name = "FLOOR",
     .description = "Rounds a number down to the nearest integer.",
     .update = update_floor_spec
@@ -188,7 +188,7 @@ static sql_ctx_spec_update_t *update_ceil_spec(sql_ctx_t *ctx, sql_ctx_spec_t *s
     return update;
 }
 
-sql_ctx_spec_t ceil_spec = {
+static sql_ctx_spec_t ceil_spec = {
     .name = "CEIL",
     .description = "Rounds a number up to the nearest integer.",
     .update = update_ceil_spec

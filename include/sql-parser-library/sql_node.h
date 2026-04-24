@@ -11,6 +11,9 @@
 #include <stdbool.h>
 #include "a-memory-library/aml_pool.h"
 
+/**
+ * Raw lexical tokens identified during the parsing phase.
+ */
 typedef enum {
     SQL_TOKEN = 0,        // Generic token
     SQL_NUMBER = 10,      // Numeric literals
@@ -35,13 +38,14 @@ typedef enum {
     SQL_STAR = 222,       // For '*'
     SQL_NULL = 223,       // For NULL
     SQL_LIST = 300,       // For list of expressions
-
-    // --- NEW: Expression Subquery Token ---
-    SQL_NODE_SUBQUERY = 400
+    SQL_NODE_SUBQUERY = 400 // Subquery expression tag
 } sql_token_type_t;
 
 const char *sql_token_type_name(sql_token_type_t type);
 
+/**
+ * Executable data types used during the VM evaluation phase.
+ */
 typedef enum {
     SQL_TYPE_UNKNOWN,
     SQL_TYPE_INT,
@@ -68,32 +72,40 @@ typedef struct sql_ctx_column_s sql_ctx_column_t;
 struct sql_select_s;
 struct sql_compiled_query_s;
 
-// callback function to resolve a row
+// Callback function to resolve an evaluation node during execution
 typedef sql_node_t * (*sql_node_cb)(struct sql_ctx_s *ctx, sql_node_t *f);
 
+/**
+ * The Executable VM Node.
+ * Contrast with `sql_ast_node_t`: The AST represents raw syntax, whereas
+ * `sql_node_t` represents strongly-typed execution instructions.
+ */
 struct sql_node_s {
-    sql_token_type_t token_type;      // Node type from AST parse
-    char *token;           // Token value
+    sql_token_type_t token_type;
+    char *token;
 
-    sql_token_type_t type;      // Node type (e.g., SQL_OPERATOR, SQL_COMPARISON)
-    sql_node_cb func;      // Function pointer to evaluate the node (if applicable)
-    sql_data_type_t data_type;  // Data type of the node
-    struct sql_ctx_spec_s *spec;  // Function specification (if applicable)
+    sql_token_type_t type;
+    sql_node_cb func;           // The evaluation execution callback
+    sql_data_type_t data_type;  // The computed return type
+    struct sql_ctx_spec_s *spec;
     sql_ctx_column_t *column;
     bool is_null;
+
+    // Physical Payload
     union {
         bool bool_value;
         int int_value;
         double double_value;
         const char *string_value;
-        time_t epoch;  // for date time
-        void *custom;  // for custom data types (typically setup when func is assigned)
+        time_t epoch;
+        void *custom;
     } value;
-    int agg_index;
-    sql_node_t **parameters;
+
+    int agg_index;               // Target state array index for aggregates
+    sql_node_t **parameters;     // Children parameters to evaluate first
     size_t num_parameters;
 
-    // --- NEW: Subquery Linkage ---
+    // Subquery Linkage
     struct sql_select_s *subquery_ast;
     struct sql_compiled_query_s *compiled_subquery;
 };

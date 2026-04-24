@@ -8,7 +8,7 @@
 #include "sql-parser-library/sql_ctx.h"
 #include <strings.h>
 
-sql_node_t *sql_bool_less(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_bool_less(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -20,7 +20,7 @@ sql_node_t *sql_bool_less(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.bool_value < right->value.bool_value, false);
 }
 
-sql_node_t *sql_bool_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_bool_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -32,7 +32,7 @@ sql_node_t *sql_bool_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.bool_value <= right->value.bool_value, false);
 }
 
-sql_node_t *sql_bool_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_bool_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -44,7 +44,7 @@ sql_node_t *sql_bool_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.bool_value != right->value.bool_value, false);
 }
 
-sql_node_t *sql_bool_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_bool_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -56,7 +56,7 @@ sql_node_t *sql_bool_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.bool_value == right->value.bool_value, false);
 }
 
-sql_node_t *sql_int_less(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_less(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -68,7 +68,7 @@ sql_node_t *sql_int_less(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.int_value < right->value.int_value, false);
 }
 
-sql_node_t *sql_int_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -80,7 +80,7 @@ sql_node_t *sql_int_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.int_value <= right->value.int_value, false);
 }
 
-sql_node_t *sql_int_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -92,7 +92,7 @@ sql_node_t *sql_int_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.int_value != right->value.int_value, false);
 }
 
-sql_node_t *sql_int_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_int_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -104,7 +104,7 @@ sql_node_t *sql_int_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.int_value == right->value.int_value, false);
 }
 
-sql_node_t *sql_double_less(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_less(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -116,7 +116,7 @@ sql_node_t *sql_double_less(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.double_value < right->value.double_value, false);
 }
 
-sql_node_t *sql_double_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -128,7 +128,7 @@ sql_node_t *sql_double_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.double_value <= right->value.double_value, false);
 }
 
-sql_node_t *sql_double_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -140,7 +140,7 @@ sql_node_t *sql_double_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.double_value != right->value.double_value, false);
 }
 
-sql_node_t *sql_double_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_double_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -152,7 +152,7 @@ sql_node_t *sql_double_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.double_value == right->value.double_value, false);
 }
 
-sql_node_t *sql_string_less(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_less(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -165,7 +165,7 @@ sql_node_t *sql_string_less(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, result < 0, false);
 }
 
-sql_node_t *sql_string_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -178,7 +178,7 @@ sql_node_t *sql_string_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, result <= 0, false);
 }
 
-sql_node_t *sql_string_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -191,7 +191,7 @@ sql_node_t *sql_string_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, result != 0, false);
 }
 
-sql_node_t *sql_string_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_string_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -204,7 +204,7 @@ sql_node_t *sql_string_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, result == 0, false);
 }
 
-sql_node_t *sql_datetime_less(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_less(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -216,7 +216,7 @@ sql_node_t *sql_datetime_less(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.epoch < right->value.epoch, false);
 }
 
-sql_node_t *sql_datetime_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -228,7 +228,7 @@ sql_node_t *sql_datetime_less_or_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.epoch <= right->value.epoch, false);
 }
 
-sql_node_t *sql_datetime_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -240,7 +240,7 @@ sql_node_t *sql_datetime_not_equal(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_bool_init(ctx, left->value.epoch != right->value.epoch, false);
 }
 
-sql_node_t *sql_datetime_equal(sql_ctx_t *ctx, sql_node_t *f) {
+static sql_node_t *sql_datetime_equal(sql_ctx_t *ctx, sql_node_t *f) {
     if (f->num_parameters != 2) {
         return sql_bool_init(ctx, false, true);
     }
@@ -291,7 +291,7 @@ static sql_ctx_spec_update_t *update_less_spec(sql_ctx_t *ctx, sql_ctx_spec_t *s
     return update;
 }
 
-sql_ctx_spec_t less_spec = {
+static sql_ctx_spec_t less_spec = {
     .name = "<",
     .description = "Less than",
     .update = update_less_spec
@@ -336,7 +336,7 @@ static sql_ctx_spec_update_t *update_less_or_equal_spec(sql_ctx_t *ctx, sql_ctx_
     return update;
 }
 
-sql_ctx_spec_t less_or_equal_spec = {
+static sql_ctx_spec_t less_or_equal_spec = {
     .name = "<=",
     .description = "Less than or equal",
     .update = update_less_or_equal_spec
@@ -381,7 +381,7 @@ static sql_ctx_spec_update_t *update_not_equal_spec(sql_ctx_t *ctx, sql_ctx_spec
     return update;
 }
 
-sql_ctx_spec_t not_equal_spec = {
+static sql_ctx_spec_t not_equal_spec = {
     .name = "!=",
     .description = "Not equal",
     .update = update_not_equal_spec
@@ -426,13 +426,13 @@ static sql_ctx_spec_update_t *update_equal_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t equal_spec = {
+static sql_ctx_spec_t equal_spec = {
     .name = "=",
     .description = "Equal",
     .update = update_equal_spec
 };
 
-sql_ctx_spec_t double_equal_spec = {
+static sql_ctx_spec_t double_equal_spec = {
     .name = "==",
     .description = "Equal",
     .update = update_equal_spec
@@ -495,13 +495,13 @@ static sql_ctx_spec_update_t *update_is_distinct_spec(sql_ctx_t *ctx, sql_ctx_sp
     return update;
 }
 
-sql_ctx_spec_t is_distinct_spec = {
+static sql_ctx_spec_t is_distinct_spec = {
     .name = "IS DISTINCT FROM",
     .description = "Null-safe inequality check",
     .update = update_is_distinct_spec
 };
 
-sql_ctx_spec_t is_not_distinct_spec = {
+static sql_ctx_spec_t is_not_distinct_spec = {
     .name = "IS NOT DISTINCT FROM",
     .description = "Null-safe equality check",
     .update = update_is_distinct_spec

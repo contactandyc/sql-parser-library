@@ -97,7 +97,7 @@ add_library(sql_parser_library_debug STATIC
   src/sql_tokenizer.c
   src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
   src/window_specs/rank.c
   src/window_specs/row_number.c
 )
@@ -176,7 +176,7 @@ add_library(sql_parser_library_memory STATIC
   src/sql_tokenizer.c
   src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
   src/window_specs/rank.c
   src/window_specs/row_number.c
 )
@@ -258,7 +258,7 @@ add_library(sql_parser_library_static STATIC
   src/sql_tokenizer.c
   src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
   src/window_specs/rank.c
   src/window_specs/row_number.c
 )
@@ -337,7 +337,7 @@ add_library(sql_parser_library_shared SHARED
   src/sql_tokenizer.c
   src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
   src/window_specs/rank.c
   src/window_specs/row_number.c
 )
