@@ -216,7 +216,11 @@ static int group_node_cmp(const group_node_t *a, const group_node_t *b) {
     }
     return 0;
 }
+
+static inline
 macro_map_insert(group_map_insert, group_node_t, group_node_cmp);
+
+static inline
 macro_map_find(group_map_find, group_node_t, group_node_cmp);
 
 static void check_node_dep(sql_node_t *node, int *dep) {
