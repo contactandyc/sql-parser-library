@@ -92,6 +92,8 @@ The core data-processing powerhouse.
 4. **CTE & Subquery Isolation:**
    When the VM encounters a subquery or a Common Table Expression (CTE), it recursively calls `internal_execute` to spawn a mini-VM. The result is wrapped into a "Virtual Dataset" (`ds->is_virtual = true`). To the outer query, this virtual dataset looks exactly like a physical table, allowing the exact same nested-loop and hash-join logic to process it transparently.
 
+---
+
 ## 4. Standard Library & Function Specifications (Specs)
 
 The `src/specs/`, `src/group_specs/`, and `src/window_specs/` directories constitute the standard library of the SQL engine. Rather than hardcoding operator logic into the compiler or VM, the engine uses a plugin architecture defined by the `sql_ctx_spec_t` interface.
@@ -107,7 +109,7 @@ The specs are divided into three functional categories:
 ### Complexities
 
 * **Dynamic Polymorphism in C:** SQL allows operators like `+` or functions like `MIN()` to accept various data types. Because C lacks native method overloading, the specs handle this manually during the `update` callback phase. For example, `arithmetic.c` inspects the AST node's children and dynamically assigns the `implementation` pointer to `sql_int_add`, `sql_double_add`, or `sql_datetime_int_add` based on the deduced types.
-* **Implicit Type Coercion:** The specs are responsible for injecting safe type casting. If a user queries `INT_COL + 5.5`, the `update_arithmetic_spec` detects the mismatch, promotes the expected return type to `SQL_TYPE_DOUBLE`, and wraps the integer parameter in a `sql_convert` node before it ever reaches the VM.
+* **Implicit Type Coercion:** The specs are responsible for injecting safe type casting. If a query contains `INT_COL + 5.5`, the `update_arithmetic_spec` detects the mismatch, promotes the expected return type to `SQL_TYPE_DOUBLE`, and wraps the integer parameter in a `sql_convert` node before it ever reaches the VM.
 * **Aggregate & Window State Lifecycles:** Stateful functions cannot simply execute and return. They must manage memory across thousands of rows. The specs handle this via a strict lifecycle:
     1.  `state_size`: Tells the VM exactly how many bytes to allocate in the hash map or partition block.
     2.  `agg_init`: Initializes the raw memory (e.g., setting a sum to `0.0`).
@@ -115,8 +117,24 @@ The specs are divided into three functional categories:
     4.  `agg_finalize`: Called at the end of the grouping phase to convert the raw C-struct state into a typed `sql_node_t` for the result set.
 * **Constant Folding & Volatility:** The compiler aggressively optimizes the AST. If a function only contains literal parameters (e.g., `CONCAT('a', 'b')`), the compiler executes it immediately and replaces the node with a static literal. However, functions like `NOW()` or `RANK()` are flagged with `.is_volatile = true` inside their spec, strictly preventing the constant folder from collapsing them at compile time.
 
-### Inter-workings
+---
 
-1.  **Registration:** During context initialization (`sql_register_ctx`), every spec is registered into the `sql_ctx_t`'s internal `macro_map_t` registry.
-2.  **Compilation (`update` phase):** When the compiler (`sql_compiler.c`) converts an AST node into an executable VM node, it looks up the associated spec. It triggers the spec's `update` callback, passing the raw parameters. The spec validates parameter counts, coerces types, and returns a `sql_ctx_spec_update_t` containing the final execution pointer (`sql_node_cb`).
-3.  **Execution (`func` phase):** During VM execution, the engine simply calls the resolved function pointer (e.g., `sql_string_concat`). For string and JSON operations, these callbacks heavily utilize the context's arena allocator (`aml_pool_t`) to ensure all intermediate string manipulations are automatically garbage collected when the query context is destroyed.
+## 5. Host Integration & Data Access
+
+The SQL engine is designed to be entirely decoupled from physical storage. It has no built-in knowledge of CSV files, JSON documents, or native structs. Instead, it relies on the host application to act as a bridge via two critical callbacks provided during `sql_vm_init`:
+
+### 1. `sql_vm_fetch_table_cb`
+When the VM encounters a table in the `FROM` or `JOIN` clauses, it asks the host application to provide a `sql_dataset_t`. The host determines how that data is loaded:
+* **Materialized Datasets (`DS_MODE_MATERIALIZED`):** The host reads the entire table into an array of pointers in memory. This is extremely fast but memory-intensive.
+* **Streaming Datasets (`DS_MODE_STREAMING`):** The host provides a `next` callback (a cursor). The VM pulls rows one at a time, drastically reducing the memory footprint for massive tables.
+
+### 2. `sql_vm_resolve_column_cb`
+When the Binder encounters a column name (e.g., `o.total`), it calls this function to get a `sql_ctx_column_t`. The host application is responsible for:
+1. Validating that the column exists in the requested table.
+2. Declaring its SQL data type (`SQL_TYPE_DOUBLE`, `SQL_TYPE_INT`, etc.).
+3. Providing a read callback (`sql_node_cb`) that knows how to extract that specific field from the raw `void *row` pointer currently being evaluated.
+
+### Complexities & Optimizations
+* **Dynamic Tagging:** The host can attach arbitrary data to `column->custom_data`. This allows a single, generic read function to process multiple tables by checking a tag (e.g., an enum indicating if the row is an `order_row_t` or a `user_row_t`), casting the `void *row` pointer appropriately, and extracting the requested field.
+* **Custom Indexes (`sql_index_t`):** The host can pre-sort data and attach custom indexes (B-Tree or Hash) to the dataset. If the query planner (`sql_planner.c`) detects a `WHERE` or `JOIN` condition that matches the index, it will bypass a full table scan and trigger the host's `lookup_exact` or `lookup_range` callbacks, converting an $O(N)$ operation into $O(\log N)$ or $O(1)$.
+* **Row Cloning:** For streaming datasets participating in Hash Joins or Grouping, the VM cannot safely hold onto a pointer to a row, because the streaming buffer is reused on the next read. The host must provide a `clone_row` callback to deep-copy the current row into a persistent memory pool when the VM requests it.
