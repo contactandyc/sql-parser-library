@@ -290,7 +290,7 @@
     },
     {
       "sql": "SELECT * FROM users WHERE id IN (SELECT user_id FROM banned_users)",
-      "expected": "SELECT * FROM users WHERE (id IN ((SELECT user_id FROM banned_users)))"
+      "expected": "SELECT * FROM users WHERE (id IN (SELECT user_id FROM banned_users))"
     },
     {
       "sql": "SELECT * FROM products WHERE price > (SELECT AVG(price) FROM products)",
@@ -302,7 +302,7 @@
     },
     {
       "sql": "SELECT * FROM active_users WHERE email NOT IN (SELECT email FROM unsubscribed)",
-      "expected": "SELECT * FROM active_users WHERE (email NOT IN ((SELECT email FROM unsubscribed)))"
+      "expected": "SELECT * FROM active_users WHERE (email NOT IN (SELECT email FROM unsubscribed))"
     },
     {
       "sql": "SELECT (SELECT MAX(val) FROM t) * 2 AS double_max",
@@ -315,6 +315,18 @@
     {
       "sql": "SELECT first_name, last_name, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC, hire_date ASC) AS dept_rank FROM employees",
       "expected": "SELECT first_name, last_name, ROW_NUMBER() OVER (PARTITION BY department_id ORDER BY salary DESC, hire_date ASC) AS dept_rank FROM employees"
+    },
+    {
+      "sql": "SELECT * FROM users WHERE EXISTS (SELECT 1 FROM orders WHERE user_id = users.id)",
+      "expected": "SELECT * FROM users WHERE EXISTS (SELECT 1 FROM orders WHERE (user_id = users.id))"
+    },
+    {
+      "sql": "SELECT name FROM t WHERE NOT EXISTS (SELECT * FROM t2 WHERE t2.a = t.b)",
+      "expected": "SELECT name FROM t WHERE (NOT EXISTS (SELECT * FROM t2 WHERE (t2.a = t.b)))"
+    },
+    {
+      "sql": "SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.x = t1.x) AND status = 'active'",
+      "expected": "SELECT a FROM t1 WHERE (EXISTS (SELECT 1 FROM t2 WHERE (t2.x = t1.x)) AND (status = 'active'))"
     }
   ]
 }

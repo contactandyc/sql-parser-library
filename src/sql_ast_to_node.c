@@ -141,8 +141,9 @@ sql_node_t *sql_convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     node->data_type = ast->data_type;
     node->spec = ast->spec;
 
-    if (ast->type == SQL_NODE_SUBQUERY) {
-        node->token = aml_pool_strdup(pool, ast->value ? ast->value : "SUBQUERY");
+    if (ast->type == SQL_NODE_SUBQUERY || ast->type == SQL_EXISTS) {
+        node->token = aml_pool_strdup(pool, ast->value ? ast->value :
+                     (ast->type == SQL_EXISTS ? "EXISTS" : "SUBQUERY"));
         node->subquery_ast = ast->subquery;
     } else if (ast->type != SQL_LIST) {
         convert_value(pool, ast, node);

@@ -59,6 +59,12 @@ bool sql_ctx_is_reserved_keyword(sql_ctx_t *ctx, const char *keyword);
 void sql_ctx_register_spec(sql_ctx_t *ctx, sql_ctx_spec_t *spec);
 sql_ctx_spec_t *sql_ctx_get_spec(sql_ctx_t *ctx, const char *name);
 
+// Add this small struct right before struct sql_ctx_s
+typedef struct sql_ctx_pool_node_s {
+    aml_pool_t *pool;
+    struct sql_ctx_pool_node_s *next;
+} sql_ctx_pool_node_t;
+
 /**
  * The Global Execution Context.
  * Acts as the central memory arena and state container for parsing, compiling, and execution.
@@ -70,6 +76,9 @@ struct sql_ctx_s {
     void *catalog_state;           // Internal routing state for the VM
 
     struct sql_vm_s *vm;           // Active VM instance (allows subquery compilation)
+    struct sql_ctx_s *parent_ctx;  // Pointer to the outer query's context
+
+    sql_ctx_pool_node_t *tracked_pools;
 
     int time_zone_offset;          // Global timezone delta
 
@@ -77,7 +86,7 @@ struct sql_ctx_s {
     sql_ctx_message_t *warnings;   // Linked list of warnings
 
     macro_map_t *reserved_keywords;// Fast-lookup tree for SQL syntax
-    sql_named_pointer_t callbacks;     // Registry of physical C functions
+    sql_named_pointer_t callbacks; // Registry of physical C functions
     macro_map_t *specs;            // Registry of SQL function specifications
 
     void *row;                     // DYNAMIC STATE: The current tuple array being evaluated
@@ -91,6 +100,7 @@ struct sql_ctx_column_s {
     sql_node_cb func;        // The C-accessor to physically fetch the data
     char *table_name;
     int table_index;         // The execution array index inside the VM
+    int scope_depth;         // How many parent scopes to traverse to find the data
     void *custom_data;
 };
 
@@ -249,5 +259,11 @@ sql_node_t *sql_copy_nodes(sql_ctx_t *ctx, sql_node_t *node);
 
 /** Pretty-prints the compiled execution tree for debugging. */
 void sql_print_node(sql_ctx_t *ctx, sql_node_t *node, int depth);
+
+/** Allocates a new memory pool and tracks it for automatic garbage collection */
+aml_pool_t *sql_ctx_allocate_tracked_pool(sql_ctx_t *ctx, size_t size);
+
+/** Destroys all tracked memory pools attached to the context */
+void sql_ctx_destroy_tracked_pools(sql_ctx_t *ctx);
 
 #endif

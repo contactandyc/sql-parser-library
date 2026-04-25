@@ -222,3 +222,27 @@ sql_ctx_spec_t *sql_ctx_get_spec(sql_ctx_t *ctx, const char *name) {
     if (!spec_node) return NULL;
     return spec_node->spec;
 }
+
+aml_pool_t *sql_ctx_allocate_tracked_pool(sql_ctx_t *ctx, size_t size) {
+    // 1. Create the isolated pool
+    aml_pool_t *new_pool = aml_pool_init(size);
+
+    // 2. Allocate the linked list node on the MAIN pool
+    sql_ctx_pool_node_t *node = aml_pool_alloc(ctx->pool, sizeof(sql_ctx_pool_node_t));
+    node->pool = new_pool;
+
+    // 3. Push it onto the context's tracker
+    node->next = ctx->tracked_pools;
+    ctx->tracked_pools = node;
+
+    return new_pool;
+}
+
+void sql_ctx_destroy_tracked_pools(sql_ctx_t *ctx) {
+    sql_ctx_pool_node_t *current = ctx->tracked_pools;
+    while (current) {
+        aml_pool_destroy(current->pool); // Hand memory back to the OS
+        current = current->next;
+    }
+    ctx->tracked_pools = NULL;
+}

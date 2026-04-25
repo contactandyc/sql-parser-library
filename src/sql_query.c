@@ -585,8 +585,11 @@ char *sql_ast_to_string(sql_ctx_t *ctx, sql_ast_node_t *node) {
             char *args = ast_list_to_string(ctx, node->left);
             return aml_pool_strdupf(ctx->pool, "(%s)", args);
         }
-
-        // --- NEW: Convert Subquery AST to String ---
+        case SQL_EXISTS: {
+            char *sub_str = sql_query_to_string(ctx, node->subquery);
+            return aml_pool_strdupf(ctx->pool, "EXISTS (%s)", sub_str);
+        }
+        // Convert Subquery AST to String
         case SQL_NODE_SUBQUERY: {
             char *sub_str = sql_query_to_string(ctx, node->subquery);
             return aml_pool_strdupf(ctx->pool, "(%s)", sub_str);

@@ -9,6 +9,17 @@
 #include "sql-parser-library/date_utils.h"
 #include <ctype.h>
 
+#ifndef HAVE_TIMEGM
+static time_t custom_timegm(struct tm *tm) {
+    time_t local_time = mktime(tm);
+    if (local_time == -1) {
+        return -1; // Error
+    }
+    return local_time - timezone; // Adjust for timezone offset
+}
+#define timegm custom_timegm
+#endif
+
 const char *date_utils_get_timezone(const char *date_str) {
     if(!date_str) {
         return NULL;

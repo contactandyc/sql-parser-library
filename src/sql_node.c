@@ -35,6 +35,7 @@ const char *sql_token_type_name(sql_token_type_t type) {
         case SQL_TOKEN: return "TOKEN";
         case SQL_LIST: return "LIST";
         case SQL_NODE_SUBQUERY: return "SUBQUERY";
+        case SQL_EXISTS: return "EXISTS";
         default: return "UNKNOWN";
     }
 }

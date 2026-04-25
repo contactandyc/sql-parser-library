@@ -322,6 +322,38 @@ static sql_ast_node_t *parse_primary(sql_ctx_t *context, sql_token_t **tokens, s
 
     sql_token_t *token = tokens[*pos];
 
+    if (token->type == SQL_KEYWORD && strcasecmp(token->token, "EXISTS") == 0) {
+        (*pos)++; // Consume 'EXISTS'
+
+        if (*pos < end_pos && tokens[*pos]->type == SQL_OPEN_PAREN) {
+            (*pos)++; // Consume '('
+
+            if (*pos < end_pos && tokens[*pos]->type == SQL_KEYWORD && strcasecmp(tokens[*pos]->token, "SELECT") == 0) {
+                sql_select_t *subquery = sql_parse_select_query(context, tokens, pos, end_pos);
+
+                if (*pos < end_pos && tokens[*pos]->type == SQL_CLOSE_PAREN) {
+                    (*pos)++; // Consume ')'
+                } else {
+                    sql_ctx_error(context, "Expected closing parenthesis after EXISTS subquery");
+                    return NULL;
+                }
+
+                sql_ast_node_t *node = aml_pool_zalloc(context->pool, sizeof(sql_ast_node_t));
+                node->type = SQL_EXISTS;
+                node->value = "EXISTS";
+                node->data_type = SQL_TYPE_BOOL;
+                node->subquery = subquery;
+                return node;
+            } else {
+                sql_ctx_error(context, "Expected SELECT inside EXISTS()");
+                return NULL;
+            }
+        } else {
+            sql_ctx_error(context, "Expected '(' after EXISTS");
+            return NULL;
+        }
+    }
+
     if (strcasecmp(token->token, "CASE") == 0) {
         (*pos)++;
         sql_ast_node_t *case_node = create_ast_node(context, token);

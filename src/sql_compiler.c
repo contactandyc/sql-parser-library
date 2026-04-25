@@ -9,6 +9,8 @@
 #include "sql-parser-library/sql_vm.h"
 #include <string.h>
 
+extern sql_node_t *sql_vm_eval_subquery(sql_ctx_t *ctx, sql_node_t *f);
+
 static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
     if (!node) return;
 
@@ -16,13 +18,30 @@ static void evaluate_subqueries(sql_ctx_t *ctx, sql_node_t *node) {
         evaluate_subqueries(ctx, node->parameters[i]);
     }
 
+    // DEFER EXISTS Evaluation to RUNTIME
+    if (node->type == SQL_EXISTS && node->subquery_ast) {
+        node->func = sql_vm_eval_subquery;
+        node->data_type = SQL_TYPE_BOOL;
+
+        node->value.custom = sql_ctx_allocate_tracked_pool(ctx, 1024 * 64);
+        return;
+    }
+
+    // Standard Compile-Time Evaluation for uncorrelated Scalar & IN-List Subqueries
     if (node->type == SQL_NODE_SUBQUERY && node->subquery_ast) {
         if (ctx->vm) {
-            // Prevent physical execution during outer EXPLAIN runs unless requested
             if (node->subquery_ast->is_explain) return;
 
-            // Fire up the inner VM!
-            sql_result_set_t *rs = sql_vm_execute(ctx->vm, node->subquery_ast);
+            sql_ctx_t inner_ctx = *ctx;
+            // --- Isolate the GC list! ---
+            inner_ctx.tracked_pools = NULL;
+
+            sql_vm_t inner_vm = *(ctx->vm);
+            inner_vm.ctx = &inner_ctx;
+            inner_vm.pool = inner_ctx.pool;
+
+            // Call the PUBLIC wrapper
+            sql_result_set_t *rs = sql_vm_execute(&inner_vm, node->subquery_ast);
 
             bool is_list = (node->token && strcmp(node->token, "LIST_SUBQUERY") == 0);
 

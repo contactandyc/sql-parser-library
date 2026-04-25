@@ -40,14 +40,17 @@ static sql_node_t *copy_evaluated_node(sql_ctx_t *ctx, sql_node_t *src) {
 }
 
 static sql_node_t *vm_virtual_func_get_data(sql_ctx_t *ctx, sql_node_t *f) {
-    void **row_set = (void **)ctx->row;
+    sql_ctx_t *target_ctx = ctx;
+    for (int i = 0; i < f->column->scope_depth; i++) target_ctx = target_ctx->parent_ctx;
+
+    void **row_set = (void **)target_ctx->row;
     if (!row_set || !f->column) return sql_bool_init(ctx, false, true);
 
     int t_idx = f->column->table_index;
     void *raw_row = row_set[t_idx];
     if (!raw_row) return sql_bool_init(ctx, false, true);
 
-    vm_catalog_state_t *cs = (vm_catalog_state_t *)ctx->catalog_state;
+    vm_catalog_state_t *cs = (vm_catalog_state_t *)target_ctx->catalog_state;
     sql_dataset_t *ds = cs->datasets[t_idx];
     const char *col_name = f->column->name;
 
@@ -81,6 +84,7 @@ static sql_ctx_column_t *vm_catalog_router(sql_ctx_t *ctx, const char *table_nam
                     col->table_name = aml_pool_strdup(ctx->pool, ds->alias);
                     col->func = vm_virtual_func_get_data;
                     col->type = ds->column_types[c];
+                    col->scope_depth = 0; // Local Scope
                     return col;
                 }
             }
@@ -89,11 +93,57 @@ static sql_ctx_column_t *vm_catalog_router(sql_ctx_t *ctx, const char *table_nam
             sql_ctx_column_t *col = vm->resolve_column(vm, physical_name, column_name);
             if (col) {
                 col->table_name = aml_pool_strdup(ctx->pool, ds->alias);
+                col->scope_depth = 0; // Local Scope
                 return col;
             }
         }
     }
+
+    // Search outer scopes!
+    if (ctx->parent_ctx) {
+        sql_ctx_column_t *parent_col = ctx->parent_ctx->schema_lookup(ctx->parent_ctx, table_name, column_name);
+        if (parent_col) {
+            parent_col->scope_depth += 1;
+            return parent_col;
+        }
+    }
+
     return NULL;
+}
+
+sql_node_t *sql_vm_eval_subquery(sql_ctx_t *ctx, sql_node_t *f) {
+    aml_pool_t *reusable_pool = (aml_pool_t *)f->value.custom;
+    aml_pool_clear(reusable_pool);
+
+    sql_ctx_t inner_ctx = *ctx;
+    inner_ctx.pool = reusable_pool;
+    inner_ctx.parent_ctx = ctx;
+    inner_ctx.row = NULL;
+    inner_ctx.current_agg_states = NULL;
+
+    // --- NEW: Isolate the GC list! ---
+    inner_ctx.tracked_pools = NULL;
+
+    sql_vm_t inner_vm = *(ctx->vm);
+    inner_vm.ctx = &inner_ctx;
+    inner_vm.pool = reusable_pool;
+
+    // Call the PUBLIC wrapper. It will execute and then clean up its own internal tracked_pools!
+    sql_result_set_t *rs = sql_vm_execute(&inner_vm, f->subquery_ast);
+
+    sql_node_t *result = NULL;
+    if (f->type == SQL_EXISTS) {
+        bool exists = (rs && rs->count > 0);
+        result = sql_bool_init(ctx, exists, false);
+    } else if (f->type == SQL_NODE_SUBQUERY) {
+        if (rs && rs->count == 1 && rs->num_columns == 1) {
+            result = copy_evaluated_node(ctx, rs->rows[0].columns[0]);
+        }
+    }
+
+    if (!result) result = sql_bool_init(ctx, false, true);
+
+    return result;
 }
 
 static void manual_bind_ast(sql_ctx_t *ctx, sql_ast_node_t *node, vm_catalog_state_t *cs) {
@@ -151,7 +201,6 @@ sql_vm_t *sql_vm_init(sql_ctx_t *ctx, sql_vm_fetch_table_cb fetch_cb, sql_vm_res
     vm->resolve_column = resolve_cb;
     vm->user_data = user_data;
 
-    // --- NEW: Attach to Context! ---
     ctx->schema_lookup = vm_catalog_router;
     ctx->vm = vm;
 
@@ -661,10 +710,10 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     if (!ast) return NULL;
     sql_ctx_t *ctx = vm->ctx;
 
-    if (!explain_mode) {
+    /*if (!explain_mode) {
         VM_DEBUG("\n========================================\n");
         VM_DEBUG("[VM-INIT] Executing Sub-Tree: %s\n", forced_alias);
-    }
+    }*/
 
     size_t num_local_ctes = 0;
     sql_cte_t *cte = ast->ctes;
@@ -1184,10 +1233,24 @@ static sql_dataset_t *internal_execute(sql_vm_t *vm, sql_select_t *ast, const ch
     return out_ds;
 }
 
-sql_result_set_t *sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
+// Rename the existing function to _sql_vm_execute
+static sql_result_set_t *_sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
     if (!ast) return NULL;
 
     sql_dataset_t *final_ds = internal_execute(vm, ast, "final_results", NULL, 0, ast->is_explain);
+
     if (!final_ds || !final_ds->is_virtual) return NULL;
     return final_ds->rs;
+}
+
+// Create the shiny new public API
+sql_result_set_t *sql_vm_execute(sql_vm_t *vm, sql_select_t *ast) {
+    // 1. Run the core engine
+    sql_result_set_t *rs = _sql_vm_execute(vm, ast);
+
+    // 2. Safely destroy all auxiliary pools generated during THIS specific execution layer
+    sql_ctx_destroy_tracked_pools(vm->ctx);
+
+    // 3. Return the result
+    return rs;
 }

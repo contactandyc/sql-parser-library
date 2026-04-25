@@ -38,7 +38,8 @@ typedef enum {
     SQL_STAR = 222,       // For '*'
     SQL_NULL = 223,       // For NULL
     SQL_LIST = 300,       // For list of expressions
-    SQL_NODE_SUBQUERY = 400 // Subquery expression tag
+    SQL_NODE_SUBQUERY = 400, // Subquery expression tag
+    SQL_EXISTS = 401      // EXISTS subquery tag
 } sql_token_type_t;
 
 const char *sql_token_type_name(sql_token_type_t type);
