@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: 2024–2026 Andy Curtis <contactandyc@gmail.com>
+// SPDX-License-Identifier: Apache-2.0
+//
+// Maintainer: Andy Curtis <contactandyc@gmail.com>
+
     /*
     // DO NOT DELETE, commented out temporarily!
     const char *queries2[] = {

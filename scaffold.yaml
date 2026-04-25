@@ -13,6 +13,56 @@ depends_on:
   - https://github.com/contactandyc/the-macro-library.git
   - https://github.com/contactandyc/a-json-library.git
 
+copyright_overrides:
+  # ── Entirely New Directories ──
+  "examples/**":
+    - contributors.andy_curtis
+  "src/window_specs/**":
+    - contributors.andy_curtis
+
+  # ── New Core Engine Components ──
+  "src/sql_binder.c":
+    - contributors.andy_curtis
+  "src/sql_compiler.c":
+    - contributors.andy_curtis
+  "src/sql_planner.c":
+    - contributors.andy_curtis
+  "src/sql_query.c":
+    - contributors.andy_curtis
+  "src/sql_result_set.c":
+    - contributors.andy_curtis
+  "src/sql_vm.c":
+    - contributors.andy_curtis
+
+  "include/sql-parser-library/sql_binder.h":
+    - contributors.andy_curtis
+  "include/sql-parser-library/sql_compiler.h":
+    - contributors.andy_curtis
+  "include/sql-parser-library/sql_planner.h":
+    - contributors.andy_curtis
+  "include/sql-parser-library/sql_query.h":
+    - contributors.andy_curtis
+  "include/sql-parser-library/sql_result_set.h":
+    - contributors.andy_curtis
+  "include/sql-parser-library/sql_vm.h":
+    - contributors.andy_curtis
+
+  # ── New SQL Functions & Specs ──
+  "src/group_specs/count.c":
+    - contributors.andy_curtis
+  "src/specs/arithmetic_ext.c":
+    - contributors.andy_curtis
+  "src/specs/case_when.c":
+    - contributors.andy_curtis
+  "src/specs/json_ext.c":
+    - contributors.andy_curtis
+  "src/specs/nullif.c":
+    - contributors.andy_curtis
+  "src/specs/regex.c":
+    - contributors.andy_curtis
+  "src/specs/string_ext.c":
+    - contributors.andy_curtis
+
 examples:
   expressions:
     targets:
