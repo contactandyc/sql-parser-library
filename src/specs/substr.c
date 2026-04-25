@@ -73,13 +73,13 @@ static sql_ctx_spec_update_t *update_substr_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
     return update;
 }
 
-sql_ctx_spec_t substr_spec = {
+static sql_ctx_spec_t substr_spec = {
     .name = "SUBSTR",
     .description = "Extracts a substring from a string starting at a given position and optionally up to a given length.",
     .update = update_substr_spec
 };
 
-sql_ctx_spec_t substring_spec = {
+static sql_ctx_spec_t substring_spec = {
     .name = "SUBSTRING",
     .description = "Extracts a substring from a string starting at a given position and optionally up to a given length.",
     .update = update_substr_spec

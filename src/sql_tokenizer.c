@@ -12,10 +12,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <ctype.h>
 #include <strings.h>
 
-sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *start, size_t length,
+static sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *start, size_t length,
                              sql_token_type_t type, const char *alt_token) {
     size_t token_length = length;
     if (alt_token)
@@ -38,61 +37,52 @@ sql_token_t *_sql_token_init(aml_buffer_t *bh, aml_pool_t *pool, const char *sta
     return token;
 }
 
-
-void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
+static void handle_timestamp(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
                       size_t length, const char **s) {
     aml_pool_t *pool = context->pool;
-    // Handle TIMESTAMP followed by a literal or unquoted timestamp and treat as COMPOUND LITERAL
-    while (isspace(**s)) (*s)++; // Skip whitespace
+    const char *peek = *s;
 
-    const char *literal_start = *s;
-    if (**s == '\'') {
-        // Quoted interval literal
-        literal_start++; // Skip opening quote
-        (*s)++;
-        while (**s != '\'' && **s) {
-            (*s)++;
+    while (isspace(*peek)) peek++;
+
+    if (*peek == '\'') {
+        const char *literal_start = peek; // KEEP the opening quote
+        peek++;
+        while (*peek != '\'' && *peek) {
+            peek++;
         }
-        const char *literal_end = *s;
-        if (**s == '\'') {
-            (*s)++; // Skip closing quote
+
+        if (*peek == '\'') {
+            peek++; // KEEP the closing quote
         } else {
-            sql_ctx_error(context, "Unterminated quoted interval literal");
+            sql_ctx_error(context, "Unterminated quoted timestamp literal");
             return;
         }
+        const char *literal_end = peek;
 
-        // Use aml_pool_strdupf to combine TIMESTAMP and the literal
         char *timestamp_token = aml_pool_strdupf(pool, "TIMESTAMP %.*s",
             (int)(literal_end - literal_start), literal_start);
 
         _sql_token_init(bh, pool, start, strlen(timestamp_token),
                         SQL_COMPOUND_LITERAL, timestamp_token);
+
+        *s = peek; // Update actual position safely
     } else {
-        // Unquoted timestamp (e.g., TIMESTAMP '2021-01-01 12:00:00')
-        const char *literal_end = *s;
-        while (isalnum(*literal_end) || *literal_end == '-' || *literal_end == ':' || *literal_end == ' ') {
-            literal_end++;
+        // Unquoted: It's just an identifier/keyword
+        if (sql_ctx_is_reserved_keyword(context, "TIMESTAMP")) {
+            _sql_token_init(bh, pool, start, length, SQL_KEYWORD, NULL);
+        } else {
+            _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
         }
-
-        // Use aml_pool_strdupf to combine TIMESTAMP and the literal
-        char *timestamp_token = aml_pool_strdupf(pool, "TIMESTAMP %.*s",
-            (int)(literal_end - literal_start), literal_start);
-
-        _sql_token_init(bh, pool, start, strlen(timestamp_token),
-                        SQL_COMPOUND_LITERAL, timestamp_token);
-        *s = literal_end; // Update position
     }
 }
 
-void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
+static void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
                      size_t length, const char **s) {
     aml_pool_t *pool = context->pool;
-    // Handle INTERVAL followed by a literal or unquoted interval
     while (isspace(**s)) (*s)++; // Skip whitespace
 
     const char *literal_start = *s;
     if (**s == '\'') {
-        // Quoted interval literal
         literal_start++; // Skip opening quote
         (*s)++;
         while (**s != '\'' && **s) {
@@ -106,14 +96,12 @@ void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
             return;
         }
 
-        // Use aml_pool_strdupf to combine INTERVAL and the literal
         char *interval_token = aml_pool_strdupf(pool, "INTERVAL %.*s",
             (int)(literal_end - literal_start), literal_start);
 
         _sql_token_init(bh, pool, start, strlen(interval_token),
                         SQL_COMPOUND_LITERAL, interval_token);
     } else {
-        // Unquoted interval (e.g., INTERVAL 5 DAYS)
         const char *literal_end = *s;
         bool space_found = false;
         while (isalnum(*literal_end) || (!space_found && isspace(*literal_end))) {
@@ -132,7 +120,6 @@ void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
             literal_end++;
         }
 
-        // Use aml_pool_strdupf to combine INTERVAL and the literal
         char *interval_token = aml_pool_strdupf(pool, "INTERVAL %.*s",
             (int)(literal_end - literal_start), literal_start);
 
@@ -142,10 +129,13 @@ void handle_interval(aml_buffer_t *bh, sql_ctx_t *context, const char *start,
     }
 }
 
-// Helper function to handle identifiers and keywords
-void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const char **s) {
+static void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const char **s) {
     const char *start = *s;
-    while (isalnum(**s) || **s == '_') (*s)++;
+
+    while (isalnum(**s) || **s == '_' || **s == '.') {
+        (*s)++;
+    }
+
     size_t length = *s - start;
     aml_pool_t *pool = context->pool;
 
@@ -177,24 +167,28 @@ void handle_identifier_or_keyword(aml_buffer_t *bh, sql_ctx_t *context, const ch
             sql_token_t *token = _sql_token_init(bh, pool, start, length, SQL_FUNCTION, NULL);
             token->spec = spec;
         } else {
-            _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
+            const char *peek = *s;
+            while (isspace(*peek)) peek++;
+
+            if (*peek == '(') {
+                _sql_token_init(bh, pool, start, length, SQL_FUNCTION, NULL);
+            } else {
+                _sql_token_init(bh, pool, start, length, SQL_IDENTIFIER, NULL);
+            }
         }
     }
 }
 
-// Helper function to handle numeric literals
-void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = *s;
     bool seen_dot = false;
     bool seen_e = false;
     bool has_underscores = false;
 
-    // Handle optional leading sign
     if (**s == '+' || **s == '-') {
         (*s)++;
     }
 
-    // First pass: Check for underscores and parse the number
     const char *scan = *s;
     while (*scan) {
         if (isdigit(*scan)) {
@@ -206,7 +200,7 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
             seen_e = true;
             scan++;
             if (*scan == '+' || *scan == '-') {
-                scan++; // Consume optional sign after 'E'
+                scan++;
             }
         } else if (*scan == '_') {
             has_underscores = true;
@@ -216,20 +210,16 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
         }
     }
 
-    // If underscores are present, clean up the number
     size_t length = scan - start;
     if (has_underscores) {
-        char *cleaned_number = aml_pool_alloc(pool, length + 1); // Temporary buffer
+        char *cleaned_number = aml_pool_alloc(pool, length + 1);
         size_t cleaned_length = 0;
-
-        // Copy characters, skipping underscores
         for (const char *p = start; p < scan; p++) {
             if (*p != '_') {
                 cleaned_number[cleaned_length++] = *p;
             }
         }
         cleaned_number[cleaned_length] = '\0';
-        // Initialize the token with the cleaned number
         if (cleaned_number[0] == '+') {
             cleaned_number++;
             cleaned_length--;
@@ -244,24 +234,30 @@ void handle_number(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
         }
         _sql_token_init(bh, pool, start, length, SQL_NUMBER, alt_token);
     }
-
-    // Update position
     *s = scan;
 }
 
-// Helper function to handle operators and comparisons
-void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     const char *start = *s;
     char ch = **s;
 
-    if ((**s == ':' && (*s)[1] == ':')) {
+    if (ch == '-' && (*s)[1] == '>' && (*s)[2] == '>') {
+        _sql_token_init(bh, pool, start, 3, SQL_OPERATOR, NULL);
+        *s += 3;
+    } else if ((**s == ':' && (*s)[1] == ':')) {
+        _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
+        *s += 2;
+    } else if (ch == '|' && (*s)[1] == '|') {
         _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
         *s += 2;
     } else if (ch == '=' || ch == '>' || ch == '<' || ch == '!') {
         if(ch == '<' && (*s)[1] == '>') {
             _sql_token_init(bh, pool, start, 2, SQL_COMPARISON, "!=");
             *s += 2;
-        } else if ((*s)[1] == '=') { // okay because *s[0] is one of =, >, <, !
+        } else if ((ch == '<' && (*s)[1] == '<') || (ch == '>' && (*s)[1] == '>')) {
+            _sql_token_init(bh, pool, start, 2, SQL_OPERATOR, NULL);
+            *s += 2;
+        } else if ((*s)[1] == '=') {
             _sql_token_init(bh, pool, start, 2, SQL_COMPARISON, NULL);
             *s += 2;
         } else {
@@ -274,11 +270,9 @@ void handle_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     }
 }
 
-// Helper function to handle parentheses, commas, and semicolons
-void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     char ch = **s;
     sql_token_type_t type;
-    // no default is needed because all cases are handled (calling function ensures that)
     switch (ch) {
         case '(': type = SQL_OPEN_PAREN; break;
         case ')': type = SQL_CLOSE_PAREN; break;
@@ -291,45 +285,43 @@ void handle_special_character(aml_buffer_t *bh, aml_pool_t *pool, const char **s
     (*s)++;
 }
 
-// Helper function to handle string literals
-void handle_string_literal(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
-    const char *start = ++(*s); // Skip opening quote
+static void handle_string_literal(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+    const char *start = ++(*s);
     while (**s && (**s != '\'' || *(*s + 1) == '\'')) {
-        if (**s == '\'' && *(*s + 1) == '\'') (*s)++; // Handle escaped quote
+        if (**s == '\'' && *(*s + 1) == '\'') (*s)++;
         (*s)++;
     }
     _sql_token_init(bh, pool, start, *s - start, SQL_LITERAL, NULL);
-    if (**s == '\'') (*s)++; // Skip closing quote
+    if (**s == '\'') (*s)++;
 }
 
-void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
+static void handle_dash_or_slash(aml_buffer_t *bh, aml_pool_t *pool, const char **s) {
     char ch = **s;
     const char *start = *s;
 
     if (ch == '-') {
-        if ((*s)[1] == '-') { // Single-line comment
+        if ((*s)[1] == '-') {
             *s += 2;
             while (**s && **s != '\n') (*s)++;
             _sql_token_init(bh, pool, start, *s - start, SQL_COMMENT, NULL);
-        } else { // Treat as an operator
+        } else {
             _sql_token_init(bh, pool, start, 1, SQL_OPERATOR, NULL);
             (*s)++;
         }
     } else if (ch == '/') {
-        if ((*s)[1] == '*') { // Multi-line comment
+        if ((*s)[1] == '*') {
             *s += 2;
             while (**s && !(**s == '*' && (*s)[1] == '/')) (*s)++;
-            if (**s) (*s) += 2; // Skip closing */
+            if (**s) (*s) += 2;
             _sql_token_init(bh, pool, start, *s - start, SQL_COMMENT, NULL);
-        } else { // Treat as an operator
+        } else {
             _sql_token_init(bh, pool, start, 1, SQL_OPERATOR, NULL);
             (*s)++;
         }
     }
 }
 
-void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s, sql_token_t *last_token) {
-    // CRITICAL FIX: Treat a minus sign following a comma as a negative number
+static void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const char **s, sql_token_t *last_token) {
     if ((**s == '-' || **s == '+') &&
         (isdigit((*s)[1]) || ((*s)[1] == '.' && isdigit((*s)[2]))) &&
         (!last_token || last_token->type == SQL_OPERATOR ||
@@ -341,7 +333,6 @@ void handle_signed_number_or_operator(aml_buffer_t *bh, aml_pool_t *pool, const 
     }
 }
 
-// Main tokenizer function
 sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_count) {
     aml_pool_t *pool = context->pool;
     aml_buffer_t *bh = aml_buffer_pool_init(pool, sizeof(sql_token_t *) * 16);
@@ -358,21 +349,18 @@ sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_coun
         } else {
             switch (*s) {
                 case '=': case '>': case '<': case '!': case '*': case '/': case ':':
+                case '%': case '^': case '&': case '|': case '~':
                     handle_operator(bh, pool, &s);
                     break;
-
                 case '(': case ')': case ',': case ';': case '[': case ']':
                     handle_special_character(bh, pool, &s);
                     break;
-
                 case '\'':
                     handle_string_literal(bh, pool, &s);
                     break;
-
-                case ' ': case '\t': case '\n': case '\r': // Whitespace
+                case ' ': case '\t': case '\n': case '\r':
                     s++;
                     break;
-
                 default:
                     sql_ctx_error(context, "Unknown character: %c", *s);
                     s++;
@@ -380,16 +368,14 @@ sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_coun
             }
         }
 
-        // Update last token
         if (aml_buffer_length(bh) > 0) {
             last_token = ((sql_token_t **)aml_buffer_end(bh))[-1];
         }
     }
 
     *token_count = aml_buffer_length(bh) / sizeof(sql_token_t *);
-
-    // Assign IDs to tokens
     sql_token_t **tokens = (sql_token_t **)aml_buffer_data(bh);
+
     for (size_t i = 0; i < *token_count; i++) {
         sql_token_t *token = tokens[i];
         token->start_position = token->start - original_start;
@@ -403,7 +389,6 @@ sql_token_t **sql_tokenize(sql_ctx_t *context, const char *s, size_t *token_coun
     return tokens;
 }
 
-// Print tokens
 void sql_token_print(sql_token_t **tokens, size_t token_count) {
     for (size_t i = 0; i < token_count; i++) {
         sql_token_t *token = tokens[i];

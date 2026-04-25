@@ -30,11 +30,12 @@ const char *sql_token_type_name(sql_token_type_t type) {
         case SQL_COMMENT: return "COMMENT";
         case SQL_IDENTIFIER: return "IDENTIFIER";
         case SQL_COMPOUND_LITERAL: return "COMPOUND_LITERAL";
-        case SQL_LITERAL: return "LITERAL";
+        case SQL_STAR: return "STAR";
         case SQL_NULL: return "NULL";
         case SQL_TOKEN: return "TOKEN";
-        case SQL_STAR: return "STAR";
         case SQL_LIST: return "LIST";
+        case SQL_NODE_SUBQUERY: return "SUBQUERY";
+        case SQL_EXISTS: return "EXISTS";
         default: return "UNKNOWN";
     }
 }
@@ -52,7 +53,7 @@ const char *sql_data_type_name(sql_data_type_t type) {
     }
 }
 
-bool is_literal(sql_node_t *node) {
+static bool sql_is_literal(sql_node_t *node) {
     sql_token_type_t type = node->token_type;
     return type == SQL_LITERAL ||
            type == SQL_COMPOUND_LITERAL ||
@@ -99,34 +100,13 @@ sql_node_t *sql_convert(sql_ctx_t *context, sql_node_t *param, sql_data_type_t t
     return create_convert_node(context, param, target_type);
 }
 
-static sql_data_type_t determine_common_type(sql_data_type_t type1, sql_data_type_t type2) {
-    if (type1 == type2) {
-        return type1;
-    }
-    // Implement type promotion rules
-    if ((type1 == SQL_TYPE_INT && type2 == SQL_TYPE_DOUBLE) ||
-        (type1 == SQL_TYPE_DOUBLE && type2 == SQL_TYPE_INT)) {
-        return SQL_TYPE_DOUBLE;
-    }
-
-    if(type1 == SQL_TYPE_DATETIME || type2 == SQL_TYPE_DATETIME) {
-        return SQL_TYPE_DATETIME;
-    }
-
-    // Default to STRING for incompatible types
-    return SQL_TYPE_STRING;
-}
-
-
-void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
-    aml_pool_t *pool = context->pool;
+void sql_apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
     if (!node) {
         return;
     }
 
-    // Process child nodes first
     for (size_t i = 0; i < node->num_parameters; i++) {
-        apply_type_conversions(context, node->parameters[i]);
+        sql_apply_type_conversions(context, node->parameters[i]);
     }
 
     if ((node->token_type == SQL_OPERATOR || node->token_type == SQL_COMPARISON) && node->num_parameters == 2) {
@@ -138,9 +118,7 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         bool should_check = true;
         if (left_type == SQL_TYPE_DATETIME && right->type == SQL_COMPOUND_LITERAL) {
             const char *value = right->token;
-            // Ensure the compound literal is a valid INTERVAL
             if (strncasecmp(value, "INTERVAL", 8) == 0) {
-                // Set the operator to a specialized datetime-interval handler
                 should_check = false;
             }
         }
@@ -148,26 +126,21 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
             should_check = false;
         }
 
-        // CRITICAL FIX: Bypass generic coercion for date arithmetic
-        // to preserve INT/DOUBLE offsets (prevents INT 1 -> DATETIME 1 coercion)
         if (node->token_type == SQL_OPERATOR && (left_type == SQL_TYPE_DATETIME || right_type == SQL_TYPE_DATETIME)) {
             should_check = false;
         }
 
         if (should_check && left_type != right_type) {
-            if ((left->type == SQL_IDENTIFIER || left->type == SQL_FUNCTION) && is_literal(right)) {
-                // Prefer to convert the literal (right) to the data type of the column (left)
+            if ((left->type == SQL_IDENTIFIER || left->type == SQL_FUNCTION) && sql_is_literal(right)) {
                 right = create_convert_node(context, right, left_type);
                 right->data_type = left_type;
                 node->parameters[1] = right;
-            } else if (is_literal(left) && (right->type == SQL_IDENTIFIER || right->type == SQL_FUNCTION)) {
-                // Prefer to convert the literal (left) to the data type of the column (right)
+            } else if (sql_is_literal(left) && (right->type == SQL_IDENTIFIER || right->type == SQL_FUNCTION)) {
                 left = create_convert_node(context, left, right_type);
                 left->data_type = right_type;
                 node->parameters[0] = left;
             } else {
-                // Use existing type promotion rules
-                sql_data_type_t common_type = determine_common_type(left_type, right_type);
+                sql_data_type_t common_type = sql_determine_common_type(left_type, right_type);
                 if (left_type != common_type) {
                     left = create_convert_node(context, left, common_type);
                     left->data_type = common_type;
@@ -182,7 +155,6 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
         }
     }
 
-    // Determine expected data types based on the node type
     if (node->token_type == SQL_FUNCTION || node->token_type == SQL_COMPARISON || node->token_type == SQL_OPERATOR ||
         node->token_type == SQL_AND || node->token_type == SQL_OR || node->token_type == SQL_NOT) {
 
@@ -210,22 +182,7 @@ void apply_type_conversions(sql_ctx_t *context, sql_node_t *node) {
     }
 }
 
-static sql_data_type_t parse_data_type_from_string(const char *type_str) {
-    if (strcasecmp(type_str, "INT") == 0 || strcasecmp(type_str, "INTEGER") == 0) {
-        return SQL_TYPE_INT;
-    } else if (strcasecmp(type_str, "DOUBLE") == 0 || strcasecmp(type_str, "DECIMAL") == 0 || strcasecmp(type_str, "NUMERIC") == 0) {
-        return SQL_TYPE_DOUBLE;
-    } else if (strcasecmp(type_str, "STRING") == 0 || strcasecmp(type_str, "VARCHAR") == 0 || strcasecmp(type_str, "CHAR") == 0) {
-        return SQL_TYPE_STRING;
-    } else if (strcasecmp(type_str, "DATETIME") == 0) {
-        return SQL_TYPE_DATETIME;
-    } else if (strcasecmp(type_str, "BOOL") == 0 || strcasecmp(type_str, "BOOLEAN") == 0) {
-        return SQL_TYPE_BOOL;
-    }
-    return SQL_TYPE_UNKNOWN;
-}
-
-void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
+void sql_simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
     if (!node) return;
 
     if (node->num_parameters == 0 && !node->func) {
@@ -233,21 +190,25 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
     }
 
     for (size_t i = 0; i < node->num_parameters; i++) {
-        simplify_tree(ctx, node->parameters[i]);
+        sql_simplify_tree(ctx, node->parameters[i]);
     }
 
     bool all_literals = true;
     for (size_t i = 0; i < node->num_parameters; i++) {
-        if (!is_literal(node->parameters[i])) {
+        if (!sql_is_literal(node->parameters[i])) {
             all_literals = false;
             break;
         }
     }
 
     if (all_literals && node->func && (node->spec || ctx->row)) {
-        sql_node_t *result_node = node->func(ctx, node);
-        if (result_node) {
-            *node = *result_node;
+        if (node->spec && node->spec->is_volatile) {
+            // Do nothing. Leave volatile functions alone so they execute per-row.
+        } else {
+            sql_node_t *result_node = node->func(ctx, node);
+            if (result_node) {
+                *node = *result_node;
+            }
         }
     }
 
@@ -255,7 +216,7 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
 
     if (node_type == SQL_AND) {
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (is_literal(node->parameters[i]) &&
+            if (sql_is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 !node->parameters[i]->value.bool_value) {
                 node->token = "FALSE";
@@ -273,7 +234,7 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
 
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (!(is_literal(node->parameters[i]) &&
+            if (!(sql_is_literal(node->parameters[i]) &&
                   node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                   node->parameters[i]->value.bool_value)) {
                 node->parameters[write_index++] = node->parameters[i];
@@ -286,7 +247,7 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
         }
     } else if (node_type == SQL_OR) {
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (is_literal(node->parameters[i]) &&
+            if (sql_is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 node->parameters[i]->value.bool_value) {
                 node->token = "TRUE";
@@ -304,7 +265,7 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
 
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (!(is_literal(node->parameters[i]) &&
+            if (!(sql_is_literal(node->parameters[i]) &&
                   node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                   !node->parameters[i]->value.bool_value)) {
                 node->parameters[write_index++] = node->parameters[i];
@@ -318,7 +279,7 @@ void simplify_tree(sql_ctx_t *ctx, sql_node_t *node) {
     }
 }
 
-sql_node_t *copy_nodes(sql_ctx_t *ctx, sql_node_t *node) {
+sql_node_t *sql_copy_nodes(sql_ctx_t *ctx, sql_node_t *node) {
     if (!node) {
         return NULL;
     }
@@ -328,52 +289,56 @@ sql_node_t *copy_nodes(sql_ctx_t *ctx, sql_node_t *node) {
     if(node->num_parameters) {
         new_node->parameters = (sql_node_t **)aml_pool_alloc(ctx->pool, node->num_parameters * sizeof(sql_node_t *));
         for (size_t i = 0; i < node->num_parameters; i++) {
-            new_node->parameters[i] = copy_nodes(ctx, node->parameters[i]);
+            new_node->parameters[i] = sql_copy_nodes(ctx, node->parameters[i]);
         }
     }
     return new_node;
 }
 
-void simplify_func_tree(sql_ctx_t *ctx, sql_node_t *node ) {
+void sql_simplify_func_tree(sql_ctx_t *ctx, sql_node_t *node ) {
     if (!node || (node->num_parameters == 0 && !node->func)) {
         return;
     }
 
     for (size_t i = 0; i < node->num_parameters; i++) {
-        simplify_func_tree(ctx, node->parameters[i]);
+        sql_simplify_func_tree(ctx, node->parameters[i]);
     }
 
     bool all_literals = true;
     for (size_t i = 0; i < node->num_parameters; i++) {
-        if (!is_literal(node->parameters[i])) {
+        if (!sql_is_literal(node->parameters[i])) {
             all_literals = false;
             break;
         }
     }
 
     if (all_literals && node->func && (node->spec || ctx->row)) {
-        sql_node_t *result_node = node->func(ctx, node);
+        if (node->spec && node->spec->is_volatile) {
+            // Do nothing. Leave volatile functions alone so they execute per-row.
+        } else {
+            sql_node_t *result_node = node->func(ctx, node);
 
-        if (result_node) {
-            *node = *result_node;
+            if (result_node) {
+                *node = *result_node;
+            }
         }
     }
 }
 
-void simplify_logical_expressions(sql_node_t *node) {
+void sql_simplify_logical_expressions(sql_node_t *node) {
     if (!node || node->num_parameters == 0) {
         return;
     }
 
     for (size_t i = 0; i < node->num_parameters; i++) {
-        simplify_logical_expressions(node->parameters[i]);
+        sql_simplify_logical_expressions(node->parameters[i]);
     }
 
     sql_token_type_t node_type = node->token_type;
 
     if (node_type == SQL_AND) {
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (is_literal(node->parameters[i]) &&
+            if (sql_is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 !node->parameters[i]->value.bool_value) {
                 node->token = "FALSE";
@@ -391,7 +356,7 @@ void simplify_logical_expressions(sql_node_t *node) {
 
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (!(is_literal(node->parameters[i]) &&
+            if (!(sql_is_literal(node->parameters[i]) &&
                   node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                   node->parameters[i]->value.bool_value)) {
                 node->parameters[write_index++] = node->parameters[i];
@@ -406,7 +371,7 @@ void simplify_logical_expressions(sql_node_t *node) {
 
     else if (node_type == SQL_OR) {
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (is_literal(node->parameters[i]) &&
+            if (sql_is_literal(node->parameters[i]) &&
                 node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                 node->parameters[i]->value.bool_value) {
                 node->token = "TRUE";
@@ -424,7 +389,7 @@ void simplify_logical_expressions(sql_node_t *node) {
 
         size_t write_index = 0;
         for (size_t i = 0; i < node->num_parameters; i++) {
-            if (!(is_literal(node->parameters[i]) &&
+            if (!(sql_is_literal(node->parameters[i]) &&
                   node->parameters[i]->data_type == SQL_TYPE_BOOL &&
                   !node->parameters[i]->value.bool_value)) {
                 node->parameters[write_index++] = node->parameters[i];
@@ -438,7 +403,7 @@ void simplify_logical_expressions(sql_node_t *node) {
     }
 }
 
-void print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
+void sql_print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
     if (!node) {
         return;
     }
@@ -449,7 +414,7 @@ void print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
     const char *data_type_name = sql_data_type_name(node->data_type);
     const char *value = node->token;
     if(node->token_type != SQL_IDENTIFIER && node->token_type != SQL_FUNCTION && node->token_type != SQL_COMPARISON && node->token_type != SQL_OPERATOR && node->data_type == SQL_TYPE_DATETIME) {
-        value = convert_epoch_to_iso_utc(ctx->pool, node->value.epoch);
+        value = date_utils_convert_epoch_to_iso_utc(ctx->pool, node->value.epoch);
     }
     const char *func_name = sql_ctx_get_callback_name(ctx, node->func);
     if(!func_name)
@@ -458,7 +423,7 @@ void print_node(sql_ctx_t *ctx, sql_node_t *node, int depth) {
             node->spec);
 
     for (size_t i = 0; i < node->num_parameters; i++) {
-        print_node(ctx, node->parameters[i], depth + 1);
+        sql_print_node(ctx, node->parameters[i], depth + 1);
     }
 }
 
@@ -551,7 +516,6 @@ sql_node_t *sql_compound_init(sql_ctx_t *ctx, const char *value, bool is_null) {
     result->is_null = is_null;
     return result;
 }
-
 
 sql_node_t *sql_datetime_init(sql_ctx_t *ctx, time_t epoch, bool is_null) {
     sql_node_t *result = (sql_node_t *)aml_pool_zalloc(ctx->pool, sizeof(sql_node_t));

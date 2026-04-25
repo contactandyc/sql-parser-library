@@ -124,7 +124,7 @@ static sql_node_t *sql_extract_second(sql_ctx_t *ctx, sql_node_t *f) {
     return sql_int_init(ctx, dt->tm_sec, false);
 }
 
-sql_node_cb get_extract_function(const char *field) {
+static sql_node_cb get_extract_function(const char *field) {
     if(strcasecmp(field, "YEAR") == 0)
         return sql_extract_year;
     else if(strcasecmp(field, "MONTH") == 0)
@@ -150,7 +150,7 @@ sql_node_cb get_extract_function(const char *field) {
     return NULL;
 }
 
-bool is_valid_extract(const char *value) {
+bool sql_is_valid_extract(const char *value) {
     if(get_extract_function(value) != NULL)
         return true;
     return false;
@@ -166,6 +166,12 @@ static sql_ctx_spec_update_t *update_extract_spec(sql_ctx_t *ctx, sql_ctx_spec_t
     sql_node_t *field_node = f->parameters[0];
     sql_node_t *datetime_node = f->parameters[1];
 
+    // --- NEW: Implicit Coercion ---
+    if (datetime_node->data_type == SQL_TYPE_STRING) {
+        datetime_node = sql_convert(ctx, datetime_node, SQL_TYPE_DATETIME);
+        f->parameters[1] = datetime_node;
+    }
+
     if (field_node->data_type != SQL_TYPE_STRING || datetime_node->data_type != SQL_TYPE_DATETIME) {
         sql_ctx_error(ctx, "Invalid parameter types for EXTRACT function. Expected (STRING, DATETIME).");
         return NULL;
@@ -173,11 +179,10 @@ static sql_ctx_spec_update_t *update_extract_spec(sql_ctx_t *ctx, sql_ctx_spec_t
 
     sql_ctx_spec_update_t *update = (sql_ctx_spec_update_t *)aml_pool_zalloc(ctx->pool, sizeof(sql_ctx_spec_update_t));
     update->num_parameters = 1;
-    update->parameters = f->parameters + 1; // Only the datetime node is passed to the implementation
+    update->parameters = f->parameters + 1;
     update->expected_data_types = (sql_data_type_t *)aml_pool_alloc(ctx->pool, sizeof(sql_data_type_t));
     update->expected_data_types[0] = SQL_TYPE_DATETIME;
     update->return_type = SQL_TYPE_INT;
-
 
     update->implementation = get_extract_function(field_node->value.string_value);
     if(update->implementation == NULL) {
@@ -188,13 +193,13 @@ static sql_ctx_spec_update_t *update_extract_spec(sql_ctx_t *ctx, sql_ctx_spec_t
 }
 
 // Specification for EXTRACT function
-sql_ctx_spec_t extract_spec = {
+static sql_ctx_spec_t extract_spec = {
     .name = "EXTRACT",
     .description = "Extracts a specified date/time part from a DATETIME value.",
     .update = update_extract_spec
 };
 
-sql_ctx_spec_t datepart_spec = {
+static sql_ctx_spec_t datepart_spec = {
     .name = "DATEPART",
     .description = "Extracts a specified date/time part from a DATETIME value.",
     .update = update_extract_spec
@@ -208,6 +213,13 @@ static sql_ctx_spec_update_t *update_shorthand_extract_spec(sql_ctx_t *ctx, sql_
     }
 
     sql_node_t *datetime_node = f->parameters[0];
+
+    // --- NEW: Implicit Coercion ---
+    if (datetime_node->data_type == SQL_TYPE_STRING) {
+        datetime_node = sql_convert(ctx, datetime_node, SQL_TYPE_DATETIME);
+        f->parameters[0] = datetime_node;
+    }
+
     if (datetime_node->data_type != SQL_TYPE_DATETIME) {
         sql_ctx_error(ctx, "Invalid parameter type for %s function. Expected DATETIME.", spec->name);
         return NULL;
@@ -228,85 +240,85 @@ static sql_ctx_spec_update_t *update_shorthand_extract_spec(sql_ctx_t *ctx, sql_
     return update;
 }
 
-sql_ctx_spec_t year_spec = {
+static sql_ctx_spec_t year_spec = {
     .name = "YEAR",
     .description = "Returns the year from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t month_spec = {
+static sql_ctx_spec_t month_spec = {
     .name = "MONTH",
     .description = "Returns the month from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t day_spec = {
+static sql_ctx_spec_t day_spec = {
     .name = "DAY",
     .description = "Returns the day from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t hour_spec = {
+static sql_ctx_spec_t hour_spec = {
     .name = "HOUR",
     .description = "Returns the hour from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t minute_spec = {
+static sql_ctx_spec_t minute_spec = {
     .name = "MINUTE",
     .description = "Returns the minute from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t second_spec = {
+static sql_ctx_spec_t second_spec = {
     .name = "SECOND",
     .description = "Returns the second from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t quarter_spec = {
+static sql_ctx_spec_t quarter_spec = {
     .name = "QUARTER",
     .description = "Returns the quarter from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t week_spec = {
+static sql_ctx_spec_t week_spec = {
     .name = "WEEK",
     .description = "Returns the ISO week number from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t doy_spec = {
+static sql_ctx_spec_t doy_spec = {
     .name = "DOY",
     .description = "Returns the day of the year from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t day_of_year_spec = {
+static sql_ctx_spec_t day_of_year_spec = {
     .name = "DAYOFYEAR",
     .description = "Returns the day of the year from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t dow_spec = {
+static sql_ctx_spec_t dow_spec = {
     .name = "DOW",
     .description = "Returns the day of the week (0 for Sunday) from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t day_of_week_spec = {
+static sql_ctx_spec_t day_of_week_spec = {
     .name = "DAYOFWEEK",
     .description = "Returns the day of the week (0 for Sunday) from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t isodow_spec = {
+static sql_ctx_spec_t isodow_spec = {
     .name = "ISODOW",
     .description = "Returns the ISO day of the week (1 for Monday to 7 for Sunday) from a DATETIME value.",
     .update = update_shorthand_extract_spec
 };
 
-sql_ctx_spec_t iso_day_of_week_spec = {
+static sql_ctx_spec_t iso_day_of_week_spec = {
     .name = "ISODAYOFWEEK",
     .description = "Returns the ISO day of the week (1 for Monday to 7 for Sunday) from a DATETIME value.",
     .update = update_shorthand_extract_spec

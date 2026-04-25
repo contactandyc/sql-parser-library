@@ -364,10 +364,10 @@ int main(int argc, char **argv) {
     printf(">> Tokens:\n\n");
     sql_tokenizer_print(tokens, token_count);
 
-    sql_ast_node_t *ast = build_ast(pool, tokens, token_count, columns, column_count);
+    sql_ast_node_t *ast = sql_build_ast(pool, tokens, token_count, columns, column_count);
 
     printf("\n\n>> AST Tree:\n\n");
-    print_ast(ast, 0);
+    sql_print_ast(ast, 0);
 
     if (ast) {
         sql_func_node_t *func_node = convert_ast_to_func_node(pool, ast);

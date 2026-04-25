@@ -4,7 +4,7 @@
 //
 // Maintainer: Andy Curtis <contactandyc@gmail.com>
 
-#include "sql-parser-library/named_pointer.h"
+#include "sql-parser-library/sql_named_pointer.h"
 #include "the-macro-library/macro_map.h"
 #include <strings.h>
 
@@ -61,7 +61,7 @@ static inline
 macro_map_insert_with_field(named_insert_ptr, ptr_map, named_pointer_node_t,
                             named_ptr_insert_compare);
 
-void register_named_pointer(aml_pool_t *pool, named_pointer_t *np,
+void sql_register_named_pointer(aml_pool_t *pool, sql_named_pointer_t *np,
                             void *ptr, const char *name, const char *description) {
     if (!np || !name || !ptr) return;
 
@@ -81,7 +81,7 @@ void register_named_pointer(aml_pool_t *pool, named_pointer_t *np,
     named_insert_ptr(&np->ptr_map, p);
 }
 
-const char *get_named_pointer_name(named_pointer_t *np, void *ptr) {
+const char *sql_get_named_pointer_name(sql_named_pointer_t *np, void *ptr) {
     if (!np || !ptr) return NULL;
 
     named_pointer_node_t *r = named_find_ptr(np->ptr_map, ptr);
@@ -89,7 +89,7 @@ const char *get_named_pointer_name(named_pointer_t *np, void *ptr) {
     return r->name;
 }
 
-const char *get_named_pointer_description(named_pointer_t *np, void *ptr) {
+const char *sql_get_named_pointer_description(sql_named_pointer_t *np, void *ptr) {
     if (!np || !ptr) return NULL;
 
     named_pointer_node_t *r = named_find_ptr(np->ptr_map, ptr);
@@ -97,7 +97,7 @@ const char *get_named_pointer_description(named_pointer_t *np, void *ptr) {
     return r->name;
 }
 
-void *get_named_pointer_pointer(named_pointer_t *np, const char *name) {
+void *sql_get_named_pointer_pointer(sql_named_pointer_t *np, const char *name) {
     if (!np || !name) return NULL;
 
     named_pointer_node_t *r = named_find_name(np->name_map, name);

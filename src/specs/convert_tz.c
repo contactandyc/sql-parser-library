@@ -60,7 +60,7 @@ static sql_ctx_spec_update_t *update_convert_tz_spec(sql_ctx_t *ctx, sql_ctx_spe
 }
 
 // CONVERT_TZ function spec
-sql_ctx_spec_t convert_tz_function_spec = {
+static sql_ctx_spec_t convert_tz_function_spec = {
     .name = "CONVERT_TZ",
     .description = "Converts a datetime value from UTC to another timezone.",
     .update = update_convert_tz_spec

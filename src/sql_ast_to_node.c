@@ -62,7 +62,6 @@ static sql_data_type_t infer_list_type(sql_ast_node_t *list) {
     return common_type;
 }
 
-
 static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *node) {
     switch (ast->data_type) {
         case SQL_TYPE_INT:
@@ -77,7 +76,6 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
             break;
         case SQL_TYPE_STRING:
             if (ast->type == SQL_COMPOUND_LITERAL && strncasecmp(ast->value, "INTERVAL", 8) == 0) {
-                // CRITICAL FIX: Gracefully strip 'INTERVAL ' and any quotes from literal
                 const char *val_ptr = ast->value + 8;
                 while (isspace(*val_ptr)) val_ptr++;
                 if (*val_ptr == '\'') val_ptr++;
@@ -100,7 +98,22 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
             break;
         case SQL_TYPE_DATETIME: {
                 time_t epoch = 0;
-                if (convert_string_to_datetime(&epoch, pool, ast->value)) {
+                const char *val_ptr = ast->value;
+                char *clean_val = NULL;
+
+                if (ast->type == SQL_COMPOUND_LITERAL && strncasecmp(val_ptr, "TIMESTAMP", 9) == 0) {
+                    val_ptr += 9;
+                    while (isspace(*val_ptr)) val_ptr++;
+                    if (*val_ptr == '\'') val_ptr++;
+
+                    clean_val = aml_pool_strdup(pool, val_ptr);
+                    if (strlen(clean_val) > 0 && clean_val[strlen(clean_val)-1] == '\'') {
+                        clean_val[strlen(clean_val)-1] = '\0';
+                    }
+                    val_ptr = clean_val;
+                }
+
+                if (date_utils_convert_string_to_datetime(&epoch, pool, val_ptr)) {
                     node->value.epoch = epoch;
                 } else {
                     node->is_null = true;
@@ -113,7 +126,7 @@ static void convert_value(aml_pool_t *pool, sql_ast_node_t *ast, sql_node_t *nod
     }
 }
 
-sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
+sql_node_t *sql_convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     aml_pool_t *pool = context->pool;
     if (!ast) {
         return NULL;
@@ -122,13 +135,19 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     sql_node_t *node = (sql_node_t *)aml_pool_zalloc(pool, sizeof(sql_node_t));
 
     node->token_type = ast->type;
-    node->token = (ast->type == SQL_LIST) ? NULL : aml_pool_strdup(pool, ast->value);
+    node->token = (ast->type == SQL_LIST || ast->type == SQL_NODE_SUBQUERY) ? NULL : aml_pool_strdup(pool, ast->value);
     node->type = ast->type;
+    node->column = ast->column;
     node->data_type = ast->data_type;
     node->spec = ast->spec;
 
-    if (ast->type != SQL_LIST)
+    if (ast->type == SQL_NODE_SUBQUERY || ast->type == SQL_EXISTS) {
+        node->token = aml_pool_strdup(pool, ast->value ? ast->value :
+                     (ast->type == SQL_EXISTS ? "EXISTS" : "SUBQUERY"));
+        node->subquery_ast = ast->subquery;
+    } else if (ast->type != SQL_LIST) {
         convert_value(pool, ast, node);
+    }
 
     if (ast->type == SQL_LIST) {
         node->data_type = infer_list_type(ast);
@@ -140,14 +159,14 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
         node->parameters = (sql_node_t **)aml_pool_alloc(pool, count * sizeof(sql_node_t *));
         elem = ast->left;
         for (size_t i = 0; elem; i++, elem = elem->next) {
-            node->parameters[i] = convert_ast_to_node(context, elem);
+            node->parameters[i] = sql_convert_ast_to_node(context, elem);
         }
     } else if (ast->spec && strcasecmp(ast->spec->name, "EXTRACT") == 0) {
         if (ast->left && strcasecmp(ast->left->value, "FROM") == 0) {
             node->num_parameters = 2;
             node->parameters = (sql_node_t **)aml_pool_alloc(pool, 2 * sizeof(sql_node_t *));
-            node->parameters[1] = convert_ast_to_node(context, ast->left->right);
-            if(is_valid_extract(ast->left->left->value)) {
+            node->parameters[1] = sql_convert_ast_to_node(context, ast->left->right);
+            if(sql_is_valid_extract(ast->left->left->value)) {
                 node->parameters[0] = sql_string_init(context, ast->left->left->value, false);
             } else {
                 sql_ctx_error(NULL, "Invalid EXTRACT syntax: invalid field");
@@ -161,21 +180,27 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
     } else if (ast->type == SQL_COMPARISON && (strcasecmp(ast->value, "BETWEEN") == 0 || strcasecmp(ast->value, "NOT BETWEEN") == 0)) {
         node->num_parameters = 3;
         node->parameters = (sql_node_t **)aml_pool_alloc(pool, 3 * sizeof(sql_node_t *));
-        node->parameters[0] = convert_ast_to_node(context, ast->left);
-        node->parameters[1] = convert_ast_to_node(context, ast->right->left);
-        node->parameters[2] = convert_ast_to_node(context, ast->right->right);
+        node->parameters[0] = sql_convert_ast_to_node(context, ast->left);
+        node->parameters[1] = sql_convert_ast_to_node(context, ast->right->left);
+        node->parameters[2] = sql_convert_ast_to_node(context, ast->right->right);
     } else if (ast->type == SQL_COMPARISON && (strcasecmp(ast->value, "IS NULL") == 0 || strcasecmp(ast->value, "IS NOT NULL") == 0)) {
         node->num_parameters = 1;
         node->parameters = (sql_node_t **)aml_pool_alloc(pool, sizeof(sql_node_t *));
-        node->parameters[0] = convert_ast_to_node(context, ast->left);
+        node->parameters[0] = sql_convert_ast_to_node(context, ast->left);
         node->data_type = SQL_TYPE_BOOL;
     } else if(ast->type == SQL_IDENTIFIER) {
-        for(size_t i = 0; i < context->column_count; i++) {
-            if(strcasecmp(context->columns[i].name, ast->value) == 0) {
-                node->data_type = context->columns[i].type;
-                node->func = context->columns[i].func;
-                break;
+        if (ast->column) {
+            node->func = ast->column->func;
+        } else if (context->schema_lookup) {
+            sql_ctx_column_t *col = context->schema_lookup(context, NULL, ast->value);
+            if (col) {
+                node->data_type = col->type;
+                node->func = col->func;
+            } else {
+                node->is_null = true;
             }
+        } else {
+            node->is_null = true;
         }
     } else {
         size_t num_parameters = 0;
@@ -197,12 +222,12 @@ sql_node_t *convert_ast_to_node(sql_ctx_t *context, sql_ast_node_t *ast) {
             node->parameters = (sql_node_t **)aml_pool_alloc(pool, num_parameters * sizeof(sql_node_t *));
             size_t index = 0;
             if (ast->left && ast->right) {
-                node->parameters[index++] = convert_ast_to_node(context, ast->left);
-                node->parameters[index++] = convert_ast_to_node(context, ast->right);
+                node->parameters[index++] = sql_convert_ast_to_node(context, ast->left);
+                node->parameters[index++] = sql_convert_ast_to_node(context, ast->right);
             } else if (ast->left) {
                 child = ast->left;
                 while (child) {
-                    node->parameters[index++] = convert_ast_to_node(context, child);
+                    node->parameters[index++] = sql_convert_ast_to_node(context, child);
                     child = child->next;
                 }
             }

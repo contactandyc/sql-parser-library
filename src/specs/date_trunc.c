@@ -193,7 +193,7 @@ static sql_node_t *sql_trunc_millennium(sql_ctx_t *ctx, sql_node_t *f) {
 }
 
 // Function to get the appropriate truncation function
-sql_node_cb get_trunc_function(const char *part) {
+static sql_node_cb get_trunc_function(const char *part) {
     if (strcasecmp(part, "SECOND") == 0)
         return sql_trunc_second;
     else if (strcasecmp(part, "MINUTE") == 0)
@@ -220,7 +220,7 @@ sql_node_cb get_trunc_function(const char *part) {
 }
 
 // Function to check if the truncation part is valid
-bool is_valid_trunc(const char *value) {
+static bool is_valid_trunc(const char *value) {
     return get_trunc_function(value) != NULL;
 }
 
@@ -232,6 +232,12 @@ static sql_ctx_spec_update_t *update_trunc_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
 
     sql_node_t *part_node = f->parameters[0];
     sql_node_t *datetime_node = f->parameters[1];
+
+    // --- NEW: Implicit Coercion ---
+    if (datetime_node->data_type == SQL_TYPE_STRING) {
+        datetime_node = sql_convert(ctx, datetime_node, SQL_TYPE_DATETIME);
+        f->parameters[1] = datetime_node;
+    }
 
     if (part_node->data_type != SQL_TYPE_STRING || datetime_node->data_type != SQL_TYPE_DATETIME) {
         sql_ctx_error(ctx, "Invalid parameter types for DATE_TRUNC. Expected (STRING, DATETIME).");
@@ -246,7 +252,7 @@ static sql_ctx_spec_update_t *update_trunc_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
 
     sql_ctx_spec_update_t *update = (sql_ctx_spec_update_t *)aml_pool_zalloc(ctx->pool, sizeof(sql_ctx_spec_update_t));
     update->num_parameters = 1;
-    update->parameters = f->parameters + 1; // Only pass the datetime node to the implementation
+    update->parameters = f->parameters + 1;
     update->expected_data_types = (sql_data_type_t *)aml_pool_alloc(ctx->pool, sizeof(sql_data_type_t));
     update->expected_data_types[0] = SQL_TYPE_DATETIME;
     update->return_type = SQL_TYPE_DATETIME;
@@ -256,7 +262,7 @@ static sql_ctx_spec_update_t *update_trunc_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
 }
 
 // Specification for DATE_TRUNC function
-sql_ctx_spec_t date_trunc_spec = {
+static sql_ctx_spec_t date_trunc_spec = {
     .name = "DATE_TRUNC",
     .description = "Truncates a DATETIME value to a specified part.",
     .update = update_trunc_spec

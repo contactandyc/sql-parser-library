@@ -1,0 +1,119 @@
+{
+  "table": {
+    "name": "datetime_tests",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "dt1", "type": "DATETIME" },
+      { "name": "dt_str", "type": "STRING" },
+      { "name": "offset_days", "type": "INT" }
+    ],
+    "rows": [
+      {
+        "id": "1",
+        "dt1": "2024-02-28T12:00:00Z",
+        "dt_str": "2024-02-28 12:00:00",
+        "offset_days": 1
+      },
+      {
+        "id": "2",
+        "dt1": "2023-12-31T23:59:59Z",
+        "dt_str": "2023-12-31 23:59:59",
+        "offset_days": 5
+      },
+      {
+        "id": "3",
+        "dt1": "2020-07-15T08:30:00Z",
+        "dt_str": "2020-07-15 08:30:00",
+        "offset_days": -10
+      },
+      {
+        "id": "4",
+        "dt1": null,
+        "dt_str": "invalid_date_format",
+        "offset_days": 2
+      }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "dt1 + 1 = '2024-02-29 12:00:00'",
+      "expected": ["1"],
+      "explanation": "Tests integer addition (days) and leap year awareness (2024 is a leap year)."
+    },
+    {
+      "sql": "offset_days + dt1 = '2024-02-29 12:00:00'",
+      "expected": ["1"],
+      "explanation": "Tests the Commutative Swap patch! (INT + DATETIME -> DATETIME + INT)"
+    },
+    {
+      "sql": "dt1 + 0.5 = '2024-02-29 00:00:00'",
+      "expected": ["1"],
+      "explanation": "Tests floating point addition (0.5 days = 12 hours)."
+    },
+    {
+      "sql": "dt1 - '2024-02-27 12:00:00' = 1.0",
+      "expected": ["1"],
+      "explanation": "Tests date diffing. Subtracting a string from a DATETIME implicitly converts the string and returns the difference in days as a DOUBLE."
+    },
+    {
+      "sql": "dt_str + INTERVAL '1' DAY = '2024-02-29 12:00:00'",
+      "expected": ["1"],
+      "explanation": "Tests implicit coercion of the left-hand string into a DATETIME when adding an interval."
+    },
+    {
+      "sql": "dt1 + INTERVAL '1 year 2 months 3 days' > '2025-04-30'",
+      "expected": ["1"],
+      "explanation": "Tests complex interval parsing."
+    },
+    {
+      "sql": "dt1 + INTERVAL 'P1Y2M3D' > '2025-04-30'",
+      "expected": ["1"],
+      "explanation": "Tests ISO-8601 interval parsing."
+    },
+    {
+      "sql": "EXTRACT(MONTH FROM dt1) = 12",
+      "expected": ["2"],
+      "explanation": "Tests the standard EXTRACT function."
+    },
+    {
+      "sql": "YEAR(dt_str) = 2023",
+      "expected": ["2"],
+      "explanation": "Tests shorthand extractors and implicit string-to-datetime coercion."
+    },
+    {
+      "sql": "QUARTER(dt1) = 1",
+      "expected": ["1"],
+      "explanation": "February is in Q1."
+    },
+    {
+      "sql": "QUARTER(dt1) = 3",
+      "expected": ["3"],
+      "explanation": "July is in Q3."
+    },
+    {
+      "sql": "DATE_TRUNC('YEAR', dt1) = '2023-01-01 00:00:00'",
+      "expected": ["2"],
+      "explanation": "Tests year truncation on a New Year's Eve timestamp."
+    },
+    {
+      "sql": "DATE_TRUNC('MONTH', dt_str) = '2020-07-01 00:00:00'",
+      "expected": ["3"],
+      "explanation": "Tests month truncation on an implicitly coerced string."
+    },
+    {
+      "sql": "DATE_TRUNC('DAY', dt1) = '2020-07-15 00:00:00'",
+      "expected": ["3"],
+      "explanation": "Tests day truncation (zeroing out the hours/mins/secs)."
+    },
+    {
+      "sql": "YEAR(dt1) IS NULL",
+      "expected": ["4"],
+      "explanation": "Ensures that date functions safely propagate NULLs instead of crashing."
+    },
+    {
+      "sql": "dt_str + INTERVAL '1' DAY IS NULL",
+      "expected": ["4"],
+      "explanation": "Ensures that attempting to implicitly coerce and add to an invalid date string gracefully yields NULL."
+    }
+  ]
+}

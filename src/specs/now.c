@@ -51,25 +51,25 @@ static sql_ctx_spec_update_t *update_current_date_spec(sql_ctx_t *ctx, sql_ctx_s
 }
 
 // Function Specifications
-sql_ctx_spec_t now_function_spec = {
+static sql_ctx_spec_t now_function_spec = {
     .name = "NOW",
     .description = "Returns the current date and time.",
     .update = update_now_spec
 };
 
-sql_ctx_spec_t getdate_function_spec = {
+static sql_ctx_spec_t getdate_function_spec = {
     .name = "GETDATE",
     .description = "Returns the current date and time (DATETIME).",
     .update = update_now_spec
 };
 
-sql_ctx_spec_t current_date_function_spec = {
+static sql_ctx_spec_t current_date_function_spec = {
     .name = "CURRENT_DATE",
     .description = "Returns the current date (DATE).",
     .update = update_current_date_spec
 };
 
-sql_ctx_spec_t current_timestamp_function_spec = {
+static sql_ctx_spec_t current_timestamp_function_spec = {
     .name = "CURRENT_TIMESTAMP",
     .description = "Returns the current date and time (DATETIME).",
     .update = update_now_spec

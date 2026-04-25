@@ -8,7 +8,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(sql_parser_library
-  VERSION 0.1.6
+  VERSION 0.1.8
   LANGUAGES C
 )
 # ── Variant selection for the umbrella alias ──────────────────────────────────
@@ -44,6 +44,7 @@ include(GNUInstallDirs)
 # ---- Dependencies (Standard CMake) ----
 find_package(a_memory_library CONFIG REQUIRED)
 find_package(the_macro_library CONFIG REQUIRED)
+find_package(a_json_library CONFIG REQUIRED)
 
 # ---- Dependencies (PkgConfig Shims) ----
 
@@ -52,10 +53,14 @@ find_package(the_macro_library CONFIG REQUIRED)
 add_library(sql_parser_library_debug STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/count.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
-  src/specs/avg.c
+  src/specs/arithmetic_ext.c
   src/specs/between.c
   src/specs/boolean.c
+  src/specs/case_when.c
   src/specs/cast_convert.c
   src/specs/coalesce.c
   src/specs/comparison.c
@@ -67,23 +72,34 @@ add_library(sql_parser_library_debug STATIC
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
+  src/specs/json_ext.c
   src/specs/length.c
   src/specs/like.c
   src/specs/lower_upper.c
   src/specs/min_max.c
   src/specs/now.c
+  src/specs/nullif.c
+  src/specs/regex.c
   src/specs/round.c
+  src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
+  src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
+  src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
+  src/window_specs/rank.c
+  src/window_specs/row_number.c
 )
 
 target_include_directories(sql_parser_library_debug PUBLIC
@@ -102,6 +118,7 @@ set_target_properties(sql_parser_library_debug PROPERTIES
 target_link_libraries(sql_parser_library_debug PUBLIC
   a_memory_library::a_memory_library
   the_macro_library::the_macro_library
+  a_json_library::a_json_library
 )
 
 target_compile_options(sql_parser_library_debug PRIVATE ${_A_DEBUG_OPTS})
@@ -115,10 +132,14 @@ install(TARGETS sql_parser_library_debug EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_memory STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/count.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
-  src/specs/avg.c
+  src/specs/arithmetic_ext.c
   src/specs/between.c
   src/specs/boolean.c
+  src/specs/case_when.c
   src/specs/cast_convert.c
   src/specs/coalesce.c
   src/specs/comparison.c
@@ -130,23 +151,34 @@ add_library(sql_parser_library_memory STATIC
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
+  src/specs/json_ext.c
   src/specs/length.c
   src/specs/like.c
   src/specs/lower_upper.c
   src/specs/min_max.c
   src/specs/now.c
+  src/specs/nullif.c
+  src/specs/regex.c
   src/specs/round.c
+  src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
+  src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
+  src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
+  src/window_specs/rank.c
+  src/window_specs/row_number.c
 )
 
 target_include_directories(sql_parser_library_memory PUBLIC
@@ -165,6 +197,7 @@ set_target_properties(sql_parser_library_memory PROPERTIES
 target_link_libraries(sql_parser_library_memory PUBLIC
   a_memory_library::a_memory_library
   the_macro_library::the_macro_library
+  a_json_library::a_json_library
 )
 
 target_compile_options(sql_parser_library_memory PRIVATE ${_A_DEBUG_OPTS})
@@ -181,10 +214,14 @@ install(TARGETS sql_parser_library_memory EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_static STATIC
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/count.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
-  src/specs/avg.c
+  src/specs/arithmetic_ext.c
   src/specs/between.c
   src/specs/boolean.c
+  src/specs/case_when.c
   src/specs/cast_convert.c
   src/specs/coalesce.c
   src/specs/comparison.c
@@ -196,23 +233,34 @@ add_library(sql_parser_library_static STATIC
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
+  src/specs/json_ext.c
   src/specs/length.c
   src/specs/like.c
   src/specs/lower_upper.c
   src/specs/min_max.c
   src/specs/now.c
+  src/specs/nullif.c
+  src/specs/regex.c
   src/specs/round.c
+  src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
+  src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
+  src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
+  src/window_specs/rank.c
+  src/window_specs/row_number.c
 )
 
 target_include_directories(sql_parser_library_static PUBLIC
@@ -231,6 +279,7 @@ set_target_properties(sql_parser_library_static PROPERTIES
 target_link_libraries(sql_parser_library_static PUBLIC
   a_memory_library::a_memory_library
   the_macro_library::the_macro_library
+  a_json_library::a_json_library
 )
 
 target_compile_options(sql_parser_library_static PRIVATE ${_A_RELEASE_OPTS})
@@ -244,10 +293,14 @@ install(TARGETS sql_parser_library_static EXPORT sql_parser_libraryTargets
 add_library(sql_parser_library_shared SHARED
   src/brutezone/timezone.c
   src/brutezone/timezone_impl.c
+  src/group_specs/avg.c
+  src/group_specs/count.c
+  src/group_specs/sum.c
   src/specs/arithmetic.c
-  src/specs/avg.c
+  src/specs/arithmetic_ext.c
   src/specs/between.c
   src/specs/boolean.c
+  src/specs/case_when.c
   src/specs/cast_convert.c
   src/specs/coalesce.c
   src/specs/comparison.c
@@ -259,23 +312,34 @@ add_library(sql_parser_library_shared SHARED
   src/specs/in.c
   src/specs/is_boolean.c
   src/specs/is_null.c
+  src/specs/json_ext.c
   src/specs/length.c
   src/specs/like.c
   src/specs/lower_upper.c
   src/specs/min_max.c
   src/specs/now.c
+  src/specs/nullif.c
+  src/specs/regex.c
   src/specs/round.c
+  src/specs/string_ext.c
   src/specs/substr.c
-  src/specs/sum.c
   src/specs/trim.c
   src/sql_ast.c
   src/sql_ast_to_node.c
+  src/sql_binder.c
+  src/sql_compiler.c
   src/sql_ctx.c
   src/sql_interval.c
   src/sql_node.c
+  src/sql_planner.c
+  src/sql_query.c
+  src/sql_result_set.c
   src/sql_tokenizer.c
+  src/sql_vm.c
   src/utils/date_utils.c
-  src/utils/named_pointer.c
+  src/utils/sql_named_pointer.c
+  src/window_specs/rank.c
+  src/window_specs/row_number.c
 )
 
 target_include_directories(sql_parser_library_shared PUBLIC
@@ -294,6 +358,7 @@ set_target_properties(sql_parser_library_shared PROPERTIES
 target_link_libraries(sql_parser_library_shared PUBLIC
   a_memory_library::a_memory_library
   the_macro_library::the_macro_library
+  a_json_library::a_json_library
 )
 
 target_compile_options(sql_parser_library_shared PRIVATE ${_A_RELEASE_OPTS})
@@ -359,7 +424,7 @@ endif()
 
 set(A_BUILD_TARGET_BASENAME "sql_parser_library")
 set(A_BUILD_EXPORT_NAMESPACE "sql_parser_library")
-set(A_BUILD_DEPS "a_memory_library;the_macro_library")
+set(A_BUILD_DEPS "a_memory_library;the_macro_library;a_json_library")
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
@@ -382,3 +447,8 @@ install(FILES
 
 
 # Dynamically mount all subprojects (apps, examples, tests, etc.)
+# # add_subdirectory(examples/expressions)
+# # add_subdirectory(examples/parse_sql)
+# # add_subdirectory(examples/example_table)
+# # add_subdirectory(examples/dbgen_test)
+# 

@@ -59,19 +59,19 @@ struct sql_ctx_message_s {
 };
 
 void sql_ctx_register_callback(sql_ctx_t *ctx, void *callback, const char *name, const char *description) {
-    register_named_pointer(ctx->pool, &ctx->callbacks, callback, name, description);
+    sql_register_named_pointer(ctx->pool, &ctx->callbacks, callback, name, description);
 }
 
 const char *sql_ctx_get_callback_name(sql_ctx_t *ctx, void *callback) {
-    return get_named_pointer_name(&ctx->callbacks, callback);
+    return sql_get_named_pointer_name(&ctx->callbacks, callback);
 }
 
 const char *sql_ctx_get_callback_description(sql_ctx_t *ctx, void *callback) {
-    return get_named_pointer_description(&ctx->callbacks, callback);
+    return sql_get_named_pointer_description(&ctx->callbacks, callback);
 }
 
 void *sql_ctx_get_callback(sql_ctx_t *ctx, const char *name) {
-    return get_named_pointer_pointer(&ctx->callbacks, name);
+    return sql_get_named_pointer_pointer(&ctx->callbacks, name);
 }
 
 void sql_ctx_reserve_keyword(sql_ctx_t *ctx, const char *keyword) {
@@ -94,9 +94,13 @@ bool sql_ctx_is_reserved_keyword(sql_ctx_t *ctx, const char *keyword) {
 }
 
 void sql_reserve_default_keywords(sql_ctx_t *ctx) {
-    // Stripped structural keywords (SELECT, WHERE, FROM, JOIN, LIMIT, etc.)
     static const char *sql_keywords[] = {
-        "AS", "IS", "DISTINCT", "CASE", "WHEN", "THEN", "END", "EXISTS",
+        "EXPLAIN", "WITH",
+        "OVER", "PARTITION", "WINDOW", // --- NEW: WINDOW FUNCTION KEYWORDS ---
+        "SELECT", "FROM", "WHERE", "ORDER", "BY", "ASC", "DESC",
+        "JOIN", "ON", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
+        "GROUP", "HAVING", "LIMIT", "OFFSET",
+        "AS", "IS", "DISTINCT", "WHEN", "THEN", "ELSE", "END", "EXISTS",
         "DOUBLE", "FLOAT", "INT", "INTEGER", "BOOL", "BOOLEAN", "DATETIME"
     };
     for(size_t i = 0; i < sizeof(sql_keywords) / sizeof(sql_keywords[0]); i++) {
@@ -113,7 +117,6 @@ void sql_ctx_error(sql_ctx_t *ctx, const char *format, ...) {
     message->message = aml_pool_strdupvf(ctx->pool, format, args);
     va_end(args);
 
-    // Append to the errors list
     message->next = ctx->errors;
     ctx->errors = message;
 }
@@ -127,7 +130,6 @@ void sql_ctx_warning(sql_ctx_t *ctx, const char *format, ...) {
     message->message = aml_pool_strdupvf(ctx->pool, format, args);
     va_end(args);
 
-    // Append to the warnings list
     message->next = ctx->warnings;
     ctx->warnings = message;
 }
@@ -219,4 +221,28 @@ sql_ctx_spec_t *sql_ctx_get_spec(sql_ctx_t *ctx, const char *name) {
     sql_ctx_spec_node_t *spec_node = sql_ctx_spec_find(ctx->specs, name);
     if (!spec_node) return NULL;
     return spec_node->spec;
+}
+
+aml_pool_t *sql_ctx_allocate_tracked_pool(sql_ctx_t *ctx, size_t size) {
+    // 1. Create the isolated pool
+    aml_pool_t *new_pool = aml_pool_init(size);
+
+    // 2. Allocate the linked list node on the MAIN pool
+    sql_ctx_pool_node_t *node = aml_pool_alloc(ctx->pool, sizeof(sql_ctx_pool_node_t));
+    node->pool = new_pool;
+
+    // 3. Push it onto the context's tracker
+    node->next = ctx->tracked_pools;
+    ctx->tracked_pools = node;
+
+    return new_pool;
+}
+
+void sql_ctx_destroy_tracked_pools(sql_ctx_t *ctx) {
+    sql_ctx_pool_node_t *current = ctx->tracked_pools;
+    while (current) {
+        aml_pool_destroy(current->pool); // Hand memory back to the OS
+        current = current->next;
+    }
+    ctx->tracked_pools = NULL;
 }

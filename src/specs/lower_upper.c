@@ -62,7 +62,7 @@ static sql_ctx_spec_update_t *update_lower_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t lower_spec = {
+static sql_ctx_spec_t lower_spec = {
     .name = "LOWER",
     .description = "Converts a string to lowercase.",
     .update = update_lower_spec
@@ -90,7 +90,7 @@ static sql_ctx_spec_update_t *update_upper_spec(sql_ctx_t *ctx, sql_ctx_spec_t *
     return update;
 }
 
-sql_ctx_spec_t upper_spec = {
+static sql_ctx_spec_t upper_spec = {
     .name = "UPPER",
     .description = "Converts a string to uppercase.",
     .update = update_upper_spec

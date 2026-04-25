@@ -49,6 +49,8 @@ static void parse_complex_interval(sql_ctx_t *context, sql_interval_t *interval,
     const char *ptr = interval_str;
     while (*ptr) {
         skip_whitespace(&ptr);
+
+        // Handle negative numbers (e.g. "-1 DAY") safely if needed, though parse_integer currently handles unsigned
         int value = parse_integer(&ptr);
         skip_whitespace(&ptr);
 
@@ -57,6 +59,16 @@ static void parse_complex_interval(sql_ctx_t *context, sql_interval_t *interval,
             ptr++;
         }
         size_t name_len = ptr - start;
+
+        // --- NEW: Prevent Infinite Loops on Bad Syntax! ---
+        if (name_len == 0) {
+            if (*ptr != '\0') {
+                ptr++; // Force pointer forward if stuck on a symbol like '-'
+            } else {
+                break; // End of string reached
+            }
+            continue;
+        }
 
         char *name = (char *)aml_pool_alloc(context->pool, name_len + 1);
         strncpy(name, start, name_len);

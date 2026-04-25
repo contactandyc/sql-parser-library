@@ -148,25 +148,25 @@ static sql_ctx_spec_update_t *update_is_not_false_spec(sql_ctx_t *ctx, sql_ctx_s
 }
 
 // Specifications for IS TRUE, IS NOT TRUE, IS FALSE, and IS NOT FALSE
-sql_ctx_spec_t is_true_function_spec = {
+static sql_ctx_spec_t is_true_function_spec = {
     .name = "IS TRUE",
     .description = "Checks if a value is TRUE.",
     .update = update_is_true_spec
 };
 
-sql_ctx_spec_t is_not_true_function_spec = {
+static sql_ctx_spec_t is_not_true_function_spec = {
     .name = "IS NOT TRUE",
     .description = "Checks if a value is NOT TRUE.",
     .update = update_is_not_true_spec
 };
 
-sql_ctx_spec_t is_false_function_spec = {
+static sql_ctx_spec_t is_false_function_spec = {
     .name = "IS FALSE",
     .description = "Checks if a value is FALSE.",
     .update = update_is_false_spec
 };
 
-sql_ctx_spec_t is_not_false_function_spec = {
+static sql_ctx_spec_t is_not_false_function_spec = {
     .name = "IS NOT FALSE",
     .description = "Checks if a value is NOT FALSE.",
     .update = update_is_not_false_spec

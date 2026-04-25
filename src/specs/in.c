@@ -223,13 +223,13 @@ static sql_ctx_spec_update_t *update_not_in_spec(sql_ctx_t *ctx, sql_ctx_spec_t 
 
 
 // Specifications for IN and NOT IN
-sql_ctx_spec_t in_function_spec = {
+static sql_ctx_spec_t in_function_spec = {
     .name = "IN",
     .description = "Checks if a value is in a list (supports type promotion).",
     .update = update_in_spec
 };
 
-sql_ctx_spec_t not_in_function_spec = {
+static sql_ctx_spec_t not_in_function_spec = {
     .name = "NOT IN",
     .description = "Checks if a value is not in a list (supports type promotion).",
     .update = update_not_in_spec

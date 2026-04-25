@@ -1,0 +1,59 @@
+{
+  "table": {
+    "name": "api_logs",
+    "columns": [
+      { "name": "id", "type": "STRING" },
+      { "name": "payload", "type": "STRING" }
+    ],
+    "rows": [
+      {
+        "id": "1",
+        "payload": "{\"user\": {\"id\": 101, \"role\": \"admin\"}, \"tags\": [{\"name\": \"beta\"}]}"
+      },
+      {
+        "id": "2",
+        "payload": "{\"user\": {\"id\": 102, \"role\": \"user\"}, \"devices\": [{\"os\": \"ios\", \"ver\": \"16\"}, {\"os\": \"android\", \"ver\": \"13\"}]}"
+      },
+      {
+        "id": "3",
+        "payload": "{\"user\": {\"id\": 103}}"
+      },
+      {
+        "id": "4",
+        "payload": "{\"user\": {\"id\": 104, role: admin"
+      }
+    ]
+  },
+  "queries": [
+    {
+      "sql": "payload->>'user.role' = 'admin'",
+      "expected": ["1"],
+      "explanation": "Tests standard Postgres-style deep JSON extraction."
+    },
+    {
+      "sql": "JSON_EXTRACT(payload, '$.user.id') = '102'",
+      "expected": ["2"],
+      "explanation": "Tests standard JSON_EXTRACT function and verifies number-to-string extraction coercion."
+    },
+    {
+      "sql": "payload->>'tags.0.name' = 'beta'",
+      "expected": ["1"],
+      "explanation": "Tests 0-based array indexing through the JSON path."
+    },
+    {
+      "sql": "payload->>'devices.os=android.ver' = '13'",
+      "expected": ["2"],
+      "explanation": "Tests the advanced array-scanning syntax (key=value) within the JSON path."
+    },
+    {
+      "sql": "payload->>'user.email' IS NULL",
+      "expected": ["1", "2", "3", "4"],
+      "explanation": "Ensures that attempting to extract a non-existent JSON property safely evaluates to NULL."
+    },
+    {
+      "sql": "payload->>'user.id' IS NULL",
+      "expected": ["4"],
+      "explanation": "Row 4 contains malformed/corrupted JSON. The evaluator should safely fail the parse and return NULL without crashing."
+    }
+  ]
+}

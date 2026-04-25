@@ -69,7 +69,7 @@ static sql_node_t *my_col_getter(sql_ctx_t *ctx, sql_node_t *f)
             if(strchr(strval, '-') != NULL || strlen(strval)==4) {
                 // Assume it's a date string
                 time_t epoch;
-                if(convert_string_to_datetime(&epoch, ctx->pool, strval)) {
+                if(date_utils_convert_string_to_datetime(&epoch, ctx->pool, strval)) {
                     return sql_datetime_init(ctx, epoch, false);
                 }
                 return sql_datetime_init(ctx, 0, true);
@@ -196,7 +196,7 @@ static void debug_one_query(my_table_t *table, const char *sql,
         return;
     }
     sql_token_print(tokens, token_count);
-    sql_ast_node_t *ast = build_ast(ctx, tokens, token_count);
+    sql_ast_node_t *ast = sql_build_ast(ctx, tokens, token_count);
     if (!ast) {
         printf("AST build failed.\n");
         return;
@@ -204,15 +204,15 @@ static void debug_one_query(my_table_t *table, const char *sql,
 
     sql_node_t *expr_node = NULL;
     if (ast) {
-        print_ast(ast, 0);
-        expr_node = convert_ast_to_node(ctx, ast);
-        print_node(ctx, expr_node, 0);
+        sql_print_ast(ast, 0);
+        expr_node = sql_convert_ast_to_node(ctx, ast);
+        sql_print_node(ctx, expr_node, 0);
         apply_type_conversions(ctx, expr_node);
-        print_node(ctx, expr_node, 0);
-        simplify_func_tree(ctx, expr_node);
-        print_node(ctx, expr_node, 0);
-        simplify_logical_expressions(expr_node);
-        print_node(ctx, expr_node, 0);
+        sql_print_node(ctx, expr_node, 0);
+        sql_simplify_func_tree(ctx, expr_node);
+        sql_print_node(ctx, expr_node, 0);
+        sql_simplify_logical_expressions(expr_node);
+        sql_print_node(ctx, expr_node, 0);
     }
 
     // We'll find the "id" column name if we want to compare row IDs
@@ -239,7 +239,7 @@ static void debug_one_query(my_table_t *table, const char *sql,
         bool matched = true;
         if (expr_node) {
             sql_node_t *result = sql_eval(ctx, expr_node);
-            print_node(ctx, result, 0);
+            sql_print_node(ctx, result, 0);
             if (!result || result->data_type != SQL_TYPE_BOOL || !result->value.bool_value) {
                 matched = false;
             }
@@ -326,7 +326,7 @@ static void run_one_query(my_table_t *table, const char *sql,
         printf(" => FAILED (Failed to tokenize.)\n");
         return;
     }
-    sql_ast_node_t *ast = build_ast(ctx, tokens, token_count);
+    sql_ast_node_t *ast = sql_build_ast(ctx, tokens, token_count);
     if (!ast) {
         printf(" => FAILED (AST build failed.)\n");
         return;
@@ -334,10 +334,10 @@ static void run_one_query(my_table_t *table, const char *sql,
 
     sql_node_t *expr_node = NULL;
     if (ast) {
-        expr_node = convert_ast_to_node(ctx, ast);
+        expr_node = sql_convert_ast_to_node(ctx, ast);
         apply_type_conversions(ctx, expr_node);
-        simplify_func_tree(ctx, expr_node);
-        simplify_logical_expressions(expr_node);
+        sql_simplify_func_tree(ctx, expr_node);
+        sql_simplify_logical_expressions(expr_node);
     }
 
     // We'll find the "id" column name if we want to compare row IDs

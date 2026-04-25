@@ -1,5 +1,5 @@
 project_title: SQL Parser Library
-version: 0.1.6
+version: 0.1.8
 stack: c/cmake
 date_created: 2024-01-01
 profile: default-knode
@@ -11,3 +11,24 @@ base_templates:
 depends_on:
   - https://github.com/contactandyc/a-memory-library.git
   - https://github.com/contactandyc/the-macro-library.git
+  - https://github.com/contactandyc/a-json-library.git
+
+examples:
+  expressions:
+    targets:
+      expressions:
+        - src/main.c
+  parse_sql:
+    targets:
+      parse_sql:
+        - src/main.c
+  example_table:
+    targets:
+      example_table:
+        - src/main.c
+  dbgen_test:
+    depends_on:
+      - https://github.com/contactandyc/the-io-library.git
+    targets:
+      dbgen_test:
+        - src/main.c

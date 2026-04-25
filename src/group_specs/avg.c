@@ -6,16 +6,39 @@
 
 #include "sql-parser-library/sql_ctx.h"
 
-static sql_node_t *sql_func_avg(sql_ctx_t *ctx, sql_node_t *f) {
-    double result = 0.0;
-    for (size_t i = 0; i < f->num_parameters; i++) {
-        sql_node_t *child = sql_eval(ctx, f->parameters[i]);
-        if (!child || child->is_null) {
-            return sql_double_init(ctx, 0, true);
-        }
-        result += child->value.double_value;
+// --- LIFECYCLE ---
+typedef struct {
+    double sum;
+    int count;
+} avg_state_t;
+
+static void avg_init(void *state) {
+    avg_state_t *s = (avg_state_t *)state;
+    s->sum = 0.0;
+    s->count = 0;
+}
+
+static void avg_step(sql_ctx_t *ctx, sql_node_t *f, void *state) {
+    sql_node_t *child = sql_eval(ctx, f->parameters[0]);
+    if (child && !child->is_null) {
+        avg_state_t *s = (avg_state_t *)state;
+        s->sum += child->value.double_value;
+        s->count++;
     }
-    return sql_double_init(ctx, result / f->num_parameters, false);
+}
+
+static sql_node_t *avg_finalize(sql_ctx_t *ctx, sql_node_t *f, void *state) {
+    avg_state_t *s = (avg_state_t *)state;
+    if (s->count == 0) return sql_double_init(ctx, 0, true);
+    return sql_double_init(ctx, s->sum / s->count, false);
+}
+
+// --- EVALUATION BRIDGE ---
+static sql_node_t *sql_func_avg(sql_ctx_t *ctx, sql_node_t *f) {
+    if (ctx->current_agg_states) {
+        return avg_finalize(ctx, f, ctx->current_agg_states[f->agg_index]);
+    }
+    return sql_double_init(ctx, 0.0, true);
 }
 
 static sql_ctx_spec_update_t *update_avg_spec(sql_ctx_t *ctx, sql_ctx_spec_t *spec, sql_node_t *f) {
@@ -42,14 +65,20 @@ static sql_ctx_spec_update_t *update_avg_spec(sql_ctx_t *ctx, sql_ctx_spec_t *sp
     return update;
 }
 
-sql_ctx_spec_t avg_spec = {
+static sql_ctx_spec_t avg_spec = {
     .name = "AVG",
     .description = "Calculates the average of numeric values.",
-    .update = update_avg_spec
+    .update = update_avg_spec,
+
+    // --- ENABLE AGGREGATION ENGINE ---
+    .is_aggregate = true,
+    .state_size = sizeof(avg_state_t),
+    .agg_init = avg_init,
+    .agg_step = avg_step,
+    .agg_finalize = avg_finalize
 };
 
 void sql_register_avg(sql_ctx_t *ctx) {
     sql_ctx_register_spec(ctx, &avg_spec);
-
     sql_ctx_register_callback(ctx, sql_func_avg, "avg", "Calculates the average of numeric values.");
 }

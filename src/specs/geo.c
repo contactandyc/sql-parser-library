@@ -71,7 +71,7 @@ static sql_ctx_spec_update_t *update_geo_distance_spec(sql_ctx_t *ctx, sql_ctx_s
     return update;
 }
 
-sql_ctx_spec_t geo_distance_spec = {
+static sql_ctx_spec_t geo_distance_spec = {
     .name = "GEO_DISTANCE",
     .description = "Calculates the distance in miles between two lat/lon points.",
     .update = update_geo_distance_spec
